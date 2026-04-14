@@ -4,7 +4,6 @@ mod api;
 mod updater;
 mod fileutil;
 mod deployer;
-mod detector;
 mod skin;
 mod ui;
 
