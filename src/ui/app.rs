@@ -46,6 +46,14 @@ pub struct App {
     pub notification: Option<(String, Instant)>,
 }
 
+#[derive(Clone)]
+struct ResolvedUpdateContext {
+    schema: Schema,
+    config: crate::types::Config,
+    cache_dir: std::path::PathBuf,
+    rime_dir: std::path::PathBuf,
+}
+
 impl App {
     pub fn new(manager: &Manager) -> Self {
         let lang = Lang::from_str(&manager.config.language);
@@ -83,6 +91,40 @@ impl App {
     pub fn notify(&mut self, msg: impl Into<String>) {
         self.notification = Some((msg.into(), Instant::now()));
     }
+}
+
+fn model_update_supported(schema: Schema) -> bool {
+    schema.supports_model_patch()
+}
+
+fn skin_patch_target(rime_dir: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
+    if cfg!(target_os = "windows") {
+        Ok(rime_dir.join("weasel.custom.yaml"))
+    } else if cfg!(target_os = "macos") {
+        Ok(rime_dir.join("squirrel.custom.yaml"))
+    } else if cfg!(target_os = "linux") {
+        Ok(rime_dir.join("default.custom.yaml"))
+    } else {
+        anyhow::bail!("当前平台不支持皮肤 Patch")
+    }
+}
+
+fn resolve_update_context(
+    app: &App,
+    manager: &Manager,
+    mode: &UpdateMode,
+) -> anyhow::Result<ResolvedUpdateContext> {
+    let schema = app.schema;
+    if matches!(mode, UpdateMode::Model) && !model_update_supported(schema) {
+        anyhow::bail!("{}", app.t.t("update.model_not_supported"));
+    }
+
+    Ok(ResolvedUpdateContext {
+        schema,
+        config: manager.config.clone(),
+        cache_dir: manager.cache_dir.clone(),
+        rime_dir: manager.rime_dir.clone(),
+    })
 }
 
 // ── 主入口 ──
@@ -281,19 +323,22 @@ fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<()
         KeyCode::Enter => {
             if let Some((key, name)) = skins.get(app.selected) {
                 let rime_dir = std::path::Path::new(&app.rime_dir);
-                // 尝试 weasel.custom.yaml 或 squirrel.custom.yaml
-                let patch = rime_dir.join("weasel.custom.yaml");
-                let patch = if !patch.exists() {
-                    rime_dir.join("squirrel.custom.yaml")
-                } else {
-                    patch
-                };
-                if let Err(e) = crate::skin::patch::write_skin_presets(&patch, &[key.as_str()]) {
-                    app.notify(format!("❌ {e}"));
-                } else if let Err(e) = crate::skin::patch::set_default_skin(&patch, key) {
-                    app.notify(format!("❌ {e}"));
-                } else {
-                    app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                match skin_patch_target(rime_dir) {
+                    Ok(patch) => {
+                        if let Err(e) =
+                            crate::skin::patch::write_skin_presets(&patch, &[key.as_str()])
+                        {
+                            app.notify(format!("❌ {e}"));
+                        } else if let Err(e) = crate::skin::patch::set_default_skin(&patch, key) {
+                            app.notify(format!("❌ {e}"));
+                        } else {
+                            app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                        }
+                    }
+                    Err(_) => {
+                        let msg = app.t.t("skin.not_supported").to_string();
+                        app.notify(msg);
+                    }
                 }
             }
             app.screen = AppScreen::Menu;
@@ -333,40 +378,57 @@ async fn start_update(app: &mut App, manager: &Manager, mode: UpdateMode) -> Res
     app.update_done = false;
     app.update_results.clear();
 
-    let schema = app.schema;
-    let cache_dir = manager.cache_dir.clone();
-    let rime_dir = manager.rime_dir.clone();
-    let config = manager.config.clone();
+    let context = match resolve_update_context(app, manager, &mode) {
+        Ok(context) => context,
+        Err(e) => {
+            app.update_results.push(format!("❌ {}", e));
+            app.update_msg = app.t.t("update.failed").into();
+            app.update_pct = 1.0;
+            app.update_done = true;
+            app.screen = AppScreen::Result;
+            return Ok(());
+        }
+    };
 
     // 使用 channel 报告进度 (简化版：直接在终端显示)
     // 实际更新在后台执行，这里用 tokio::spawn
 
     let results = match mode {
         UpdateMode::All => {
-            updater::update_all(&schema, &config, cache_dir, rime_dir, |_msg, _pct| {}).await
+            updater::update_all(
+                &context.schema,
+                &context.config,
+                context.cache_dir,
+                context.rime_dir,
+                |_msg, _pct| {},
+            )
+            .await
         }
         UpdateMode::Scheme => {
-            let base =
-                updater::BaseUpdater::new(&config, cache_dir.clone(), rime_dir.clone()).unwrap();
-            if schema.is_wanxiang() {
+            let base = updater::BaseUpdater::new(
+                &context.config,
+                context.cache_dir.clone(),
+                context.rime_dir.clone(),
+            )?;
+            if context.schema.is_wanxiang() {
                 updater::wanxiang::WanxiangUpdater { base }
-                    .update_scheme(&schema, &config, |_, _| {})
+                    .update_scheme(&context.schema, &context.config, |_, _| {})
                     .await
                     .map(|r| vec![r])
-            } else if schema == Schema::Ice {
+            } else if context.schema == Schema::Ice {
                 updater::ice::IceUpdater { base }
-                    .update_scheme(&config, |_, _| {})
+                    .update_scheme(&context.config, |_, _| {})
                     .await
                     .map(|r| vec![r])
             } else {
                 updater::frost::FrostUpdater { base }
-                    .update_scheme(&config, |_, _| {})
+                    .update_scheme(&context.config, |_, _| {})
                     .await
                     .map(|r| vec![r])
             }
         }
         UpdateMode::Dict => {
-            if schema.dict_zip().is_none() {
+            if context.schema.dict_zip().is_none() {
                 Ok(vec![updater::UpdateResult {
                     component: "词库".into(),
                     old_version: "-".into(),
@@ -375,27 +437,37 @@ async fn start_update(app: &mut App, manager: &Manager, mode: UpdateMode) -> Res
                     message: app.t.t("update.no_dict").into(),
                 }])
             } else {
-                let base = updater::BaseUpdater::new(&config, cache_dir, rime_dir).unwrap();
-                if schema.is_wanxiang() {
+                let base = updater::BaseUpdater::new(
+                    &context.config,
+                    context.cache_dir,
+                    context.rime_dir,
+                )?;
+                if context.schema.is_wanxiang() {
                     updater::wanxiang::WanxiangUpdater { base }
-                        .update_dict(&schema, &config, |_, _| {})
+                        .update_dict(&context.schema, &context.config, |_, _| {})
                         .await
                         .map(|r| vec![r])
                 } else {
                     updater::ice::IceUpdater { base }
-                        .update_dict(&config, |_, _| {})
+                        .update_dict(&context.config, |_, _| {})
                         .await
                         .map(|r| vec![r])
                 }
             }
         }
         UpdateMode::Model => {
-            let base = updater::BaseUpdater::new(&config, cache_dir, rime_dir.clone()).unwrap();
+            let base = updater::BaseUpdater::new(
+                &context.config,
+                context.cache_dir,
+                context.rime_dir.clone(),
+            )?;
             let wx = updater::wanxiang::WanxiangUpdater { base };
-            let r = wx.update_model(&config, |_, _| {}).await?;
+            let r = wx.update_model(&context.config, |_, _| {}).await?;
             let mut v = vec![r];
-            if config.model_patch_enabled && schema.supports_model_patch() {
-                if let Err(e) = updater::model_patch::patch_model(&rime_dir, &schema) {
+            if context.config.model_patch_enabled && context.schema.supports_model_patch() {
+                if let Err(e) =
+                    updater::model_patch::patch_model(&context.rime_dir, &context.schema)
+                {
                     v.push(updater::UpdateResult {
                         component: "模型patch".into(),
                         old_version: "?".into(),
@@ -767,4 +839,32 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             )),
     );
     f.render_widget(p, area);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_update_only_supported_for_wanxiang_schemas() {
+        assert!(model_update_supported(Schema::WanxiangBase));
+        assert!(model_update_supported(Schema::WanxiangMoqi));
+        assert!(!model_update_supported(Schema::Ice));
+        assert!(!model_update_supported(Schema::Frost));
+    }
+
+    #[test]
+    fn skin_patch_target_matches_platform_convention() {
+        let base = std::path::Path::new("/tmp/rime");
+        let target = skin_patch_target(base).unwrap();
+
+        #[cfg(target_os = "windows")]
+        assert_eq!(target, base.join("weasel.custom.yaml"));
+
+        #[cfg(target_os = "macos")]
+        assert_eq!(target, base.join("squirrel.custom.yaml"));
+
+        #[cfg(target_os = "linux")]
+        assert_eq!(target, base.join("default.custom.yaml"));
+    }
 }

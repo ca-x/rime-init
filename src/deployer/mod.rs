@@ -4,16 +4,21 @@ use std::path::{Path, PathBuf};
 /// 跨平台部署 Rime
 pub fn deploy() -> Result<()> {
     let engines = detect_engines();
-    if engines.is_empty() {
-        anyhow::bail!("未检测到 Rime 引擎");
-    }
+    ensure_deployable_engine_set(!engines.is_empty())?;
 
+    let mut success_count = 0usize;
+    let mut failures = Vec::new();
     for engine in &engines {
-        if let Err(e) = deploy_to(engine) {
-            eprintln!("⚠️  部署到 {engine} 失败: {e}");
+        match deploy_to(engine) {
+            Ok(()) => success_count += 1,
+            Err(e) => {
+                eprintln!("⚠️  部署到 {engine} 失败: {e}");
+                failures.push(format!("{engine}: {e}"));
+            }
         }
     }
-    Ok(())
+
+    finalize_deploy_result(success_count, failures)
 }
 
 /// 部署到指定引擎
@@ -273,4 +278,47 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn ensure_deployable_engine_set(has_engines: bool) -> Result<()> {
+    if has_engines {
+        Ok(())
+    } else {
+        anyhow::bail!("未检测到 Rime 引擎");
+    }
+}
+
+fn finalize_deploy_result(success_count: usize, failures: Vec<String>) -> Result<()> {
+    if success_count == 0 {
+        anyhow::bail!("所有 Rime 引擎部署失败: {}", failures.join("; "));
+    }
+
+    if !failures.is_empty() {
+        eprintln!("⚠️  部分引擎部署失败: {}", failures.join("; "));
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rejects_empty_engine_set() {
+        assert!(ensure_deployable_engine_set(false).is_err());
+        assert!(ensure_deployable_engine_set(true).is_ok());
+    }
+
+    #[test]
+    fn fails_when_all_deployments_fail() {
+        let err = finalize_deploy_result(0, vec!["fcitx5: boom".into()]).unwrap_err();
+        assert!(err.to_string().contains("所有 Rime 引擎部署失败"));
+    }
+
+    #[test]
+    fn succeeds_when_at_least_one_deployment_succeeds() {
+        assert!(finalize_deploy_result(1, Vec::new()).is_ok());
+        assert!(finalize_deploy_result(1, vec!["ibus: failed".into()]).is_ok());
+    }
 }

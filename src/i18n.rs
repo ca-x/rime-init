@@ -96,6 +96,11 @@ impl L10n {
         en.insert("update.dict", "Dictionary");
         zh.insert("update.model", "模型");
         en.insert("update.model", "Model");
+        zh.insert("update.model_not_supported", "此方案不支持模型更新");
+        en.insert(
+            "update.model_not_supported",
+            "This scheme does not support model updates",
+        );
 
         // ── 部署 ──
         zh.insert("deploy.reloading", "正在重载");
@@ -167,6 +172,11 @@ impl L10n {
         en.insert("skin.select", "Select skin");
         zh.insert("skin.applied", "皮肤已设置");
         en.insert("skin.applied", "Skin applied");
+        zh.insert("skin.not_supported", "当前平台不支持皮肤 Patch");
+        en.insert(
+            "skin.not_supported",
+            "Skin patch is not supported on this platform",
+        );
 
         // ── 方案 ──
         zh.insert("scheme.select", "选择方案");

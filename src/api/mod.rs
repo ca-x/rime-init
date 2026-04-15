@@ -199,7 +199,11 @@ impl Client {
         for attempt in 0..3 {
             if attempt > 0 {
                 let delay = std::time::Duration::from_secs(1 << attempt);
-                eprintln!("⚠️ 下载失败，{}s 后重试 ({}/3)...", delay.as_secs(), attempt + 1);
+                eprintln!(
+                    "⚠️ 下载失败，{}s 后重试 ({}/3)...",
+                    delay.as_secs(),
+                    attempt + 1
+                );
                 tokio::time::sleep(delay).await;
             }
 
