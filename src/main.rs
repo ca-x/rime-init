@@ -52,7 +52,25 @@ async fn main() -> anyhow::Result<()> {
     if cli.init {
         ui::wizard::run_init_wizard().await?;
     } else if cli.update || cli.scheme || cli.dict || cli.model {
-        let manager = config::Manager::new()?;
+        let mut manager = config::Manager::new()?;
+
+        // 应用 CLI 覆盖
+        if cli.mirror {
+            manager.config.use_mirror = true;
+        }
+        if let Some(ref proxy) = cli.proxy {
+            manager.config.proxy_enabled = true;
+            if proxy.starts_with("http://") {
+                manager.config.proxy_type = "http".into();
+                manager.config.proxy_address = proxy.trim_start_matches("http://").into();
+            } else if proxy.starts_with("socks5://") {
+                manager.config.proxy_type = "socks5".into();
+                manager.config.proxy_address = proxy.trim_start_matches("socks5://").into();
+            } else {
+                manager.config.proxy_address = proxy.clone();
+            }
+        }
+
         let schema = manager.config.schema;
         let cache_dir = manager.cache_dir.clone();
         let rime_dir = manager.rime_dir.clone();

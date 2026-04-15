@@ -415,16 +415,30 @@ pub async fn update_all(
     rime_dir: PathBuf,
     mut progress: impl FnMut(&str, f64),
 ) -> Result<Vec<UpdateResult>> {
-    let base = BaseUpdater::new(config, cache_dir, rime_dir.clone())?;
     let mut results = Vec::new();
 
+    // Pre-update hook
+    if !config.pre_update_hook.is_empty() {
+        progress("执行 pre-update hook...", 0.01);
+        if let Err(e) = crate::deployer::run_hook(&config.pre_update_hook, "pre-update") {
+            results.push(UpdateResult {
+                component: "hook".into(),
+                old_version: "-".into(),
+                new_version: "-".into(),
+                success: false,
+                message: format!("pre-update hook 失败: {e}"),
+            });
+            return Ok(results); // hook 失败则中止
+        }
+    }
+
     // 1. 方案
-    progress("更新方案...", 0.0);
-    let scheme = SchemeUpdater { base: BaseUpdater::new(config, Default::default(), rime_dir.clone())? };
-    // 复用 client 避免重复创建
-    match scheme.run(schema, config, |msg, pct| {
-        progress(msg, pct * 0.40);
-    }).await {
+    progress("更新方案...", 0.05);
+    match (SchemeUpdater { base: BaseUpdater::new(config, cache_dir.clone(), rime_dir.clone())? })
+        .run(schema, config, |msg, pct| {
+            progress(msg, 0.05 + pct * 0.35);
+        }).await
+    {
         Ok(r) => results.push(r),
         Err(e) => results.push(UpdateResult {
             component: "方案".into(),
@@ -438,10 +452,11 @@ pub async fn update_all(
     // 2. 词库 (如果有独立词库)
     if schema.dict_zip().is_some() {
         progress("更新词库...", 0.40);
-        let dict = DictUpdater { base: BaseUpdater::new(config, Default::default(), rime_dir.clone())? };
-        match dict.run(schema, config, |msg, pct| {
-            progress(msg, 0.40 + pct * 0.30);
-        }).await {
+        match (DictUpdater { base: BaseUpdater::new(config, cache_dir.clone(), rime_dir.clone())? })
+            .run(schema, config, |msg, pct| {
+                progress(msg, 0.40 + pct * 0.30);
+            }).await
+        {
             Ok(r) => results.push(r),
             Err(e) => results.push(UpdateResult {
                 component: "词库".into(),
@@ -453,13 +468,14 @@ pub async fn update_all(
         }
     }
 
-    // 3. 模型 (仅万象)
+    // 3. 模型 (仅万象，且启用)
     if schema.supports_model_patch() && config.model_patch_enabled {
         progress("更新模型...", 0.70);
-        let model = ModelUpdater { base: BaseUpdater::new(config, Default::default(), rime_dir.clone())? };
-        match model.run(config, |msg, pct| {
-            progress(msg, 0.70 + pct * 0.30);
-        }).await {
+        match (ModelUpdater { base: BaseUpdater::new(config, cache_dir, rime_dir.clone())? })
+            .run(config, |msg, pct| {
+                progress(msg, 0.70 + pct * 0.20);
+            }).await
+        {
             Ok(r) => results.push(r),
             Err(e) => results.push(UpdateResult {
                 component: "模型".into(),
@@ -468,6 +484,67 @@ pub async fn update_all(
                 success: false,
                 message: e.to_string(),
             }),
+        }
+
+        // 自动 patch 模型
+        if model_patch::is_model_patched(&rime_dir, schema) {
+            // 已 patch, 无需重复
+        } else if let Err(e) = model_patch::patch_model(&rime_dir, schema) {
+            results.push(UpdateResult {
+                component: "模型patch".into(),
+                old_version: "-".into(),
+                new_version: "-".into(),
+                success: false,
+                message: e.to_string(),
+            });
+        }
+    }
+
+    // 4. 部署
+    progress("部署...", 0.92);
+    if let Err(e) = crate::deployer::deploy() {
+        results.push(UpdateResult {
+            component: "部署".into(),
+            old_version: "-".into(),
+            new_version: "-".into(),
+            success: false,
+            message: e.to_string(),
+        });
+    } else {
+        results.push(UpdateResult {
+            component: "部署".into(),
+            old_version: "-".into(),
+            new_version: "-".into(),
+            success: true,
+            message: "Rime 已重载".into(),
+        });
+    }
+
+    // 5. Fcitx 兼容同步 (Linux)
+    if config.fcitx_compat {
+        progress("同步 Fcitx 目录...", 0.96);
+        if let Err(e) = crate::deployer::sync_to_fcitx(&rime_dir, config.fcitx_use_link) {
+            results.push(UpdateResult {
+                component: "fcitx同步".into(),
+                old_version: "-".into(),
+                new_version: "-".into(),
+                success: false,
+                message: e.to_string(),
+            });
+        }
+    }
+
+    // Post-update hook
+    if !config.post_update_hook.is_empty() {
+        progress("执行 post-update hook...", 0.98);
+        if let Err(e) = crate::deployer::run_hook(&config.post_update_hook, "post-update") {
+            results.push(UpdateResult {
+                component: "hook".into(),
+                old_version: "-".into(),
+                new_version: "-".into(),
+                success: false,
+                message: format!("post-update hook 失败: {e}"),
+            });
         }
     }
 
