@@ -12,8 +12,7 @@ crossterm = "0.28"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-reqwest = { version = "0.12", features = ["json", "socks", "stream"] }
-openssl = { version = "0.10", features = ["vendored"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "socks", "stream", "rustls-tls"] }
 tokio = { version = "1", features = ["full"] }
 zip = "4"
 sha2 = "0.10"
