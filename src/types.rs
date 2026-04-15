@@ -114,19 +114,19 @@ impl Schema {
         }
     }
 
-    /// 词库 zip 文件名 (万象共用，雾凇/白霜有各自的)
+    /// 词库 zip 文件名
     pub fn dict_zip(&self) -> Option<&'static str> {
         match self {
             Schema::WanxiangBase => Some("base-dicts.zip"),
-            Schema::WanxiangMoqi
-            | Schema::WanxiangFlypy
-            | Schema::WanxiangZrm
-            | Schema::WanxiangTiger
-            | Schema::WanxiangWubi
-            | Schema::WanxiangHanxin
-            | Schema::WanxiangShouyou
-            | Schema::WanxiangShyplus
-            | Schema::WanxiangWx => Some("pro-dicts.zip"),
+            Schema::WanxiangMoqi => Some("pro-moqi-fuzhu-dicts.zip"),
+            Schema::WanxiangFlypy => Some("pro-flypy-fuzhu-dicts.zip"),
+            Schema::WanxiangZrm => Some("pro-zrm-fuzhu-dicts.zip"),
+            Schema::WanxiangTiger => Some("pro-tiger-fuzhu-dicts.zip"),
+            Schema::WanxiangWubi => Some("pro-wubi-fuzhu-dicts.zip"),
+            Schema::WanxiangHanxin => Some("pro-hanxin-fuzhu-dicts.zip"),
+            Schema::WanxiangShouyou => Some("pro-shouyou-fuzhu-dicts.zip"),
+            Schema::WanxiangShyplus => Some("pro-shyplus-fuzhu-dicts.zip"),
+            Schema::WanxiangWx => Some("pro-wx-fuzhu-dicts.zip"),
             Schema::Ice => Some("all_dicts.zip"),
             Schema::Frost => None, // 白霜词库内嵌在方案 zip 中
         }
@@ -146,9 +146,9 @@ impl Schema {
         !matches!(self, Schema::Ice | Schema::Frost)
     }
 
-    /// 是否支持模型 patch
+    /// 是否支持将万象模型 patch 到当前方案
     pub fn supports_model_patch(&self) -> bool {
-        self.is_wanxiang()
+        true
     }
 
     /// Rime schema id (用于 patch 文件名)
@@ -165,7 +165,7 @@ impl Schema {
             | Schema::WanxiangShyplus
             | Schema::WanxiangWx => "wanxiang_pro",
             Schema::Ice => "rime_ice",
-            Schema::Frost => "frost",
+            Schema::Frost => "rime_frost",
         }
     }
 
@@ -345,8 +345,8 @@ mod tests {
     #[test]
     fn test_schema_supports_model_patch() {
         assert!(Schema::WanxiangBase.supports_model_patch());
-        assert!(!Schema::Ice.supports_model_patch());
-        assert!(!Schema::Frost.supports_model_patch());
+        assert!(Schema::Ice.supports_model_patch());
+        assert!(Schema::Frost.supports_model_patch());
     }
 
     #[test]
@@ -369,6 +369,42 @@ mod tests {
     #[test]
     fn test_schema_dict_zip() {
         assert_eq!(Schema::WanxiangBase.dict_zip(), Some("base-dicts.zip"));
+        assert_eq!(
+            Schema::WanxiangMoqi.dict_zip(),
+            Some("pro-moqi-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangFlypy.dict_zip(),
+            Some("pro-flypy-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangZrm.dict_zip(),
+            Some("pro-zrm-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangTiger.dict_zip(),
+            Some("pro-tiger-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangWubi.dict_zip(),
+            Some("pro-wubi-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangHanxin.dict_zip(),
+            Some("pro-hanxin-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangShouyou.dict_zip(),
+            Some("pro-shouyou-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangShyplus.dict_zip(),
+            Some("pro-shyplus-fuzhu-dicts.zip")
+        );
+        assert_eq!(
+            Schema::WanxiangWx.dict_zip(),
+            Some("pro-wx-fuzhu-dicts.zip")
+        );
         assert_eq!(Schema::Ice.dict_zip(), Some("all_dicts.zip"));
         assert_eq!(Schema::Frost.dict_zip(), None);
     }
@@ -388,7 +424,7 @@ mod tests {
         assert_eq!(Schema::WanxiangBase.schema_id(), "wanxiang");
         assert_eq!(Schema::WanxiangMoqi.schema_id(), "wanxiang_pro");
         assert_eq!(Schema::Ice.schema_id(), "rime_ice");
-        assert_eq!(Schema::Frost.schema_id(), "frost");
+        assert_eq!(Schema::Frost.schema_id(), "rime_frost");
     }
 
     #[test]

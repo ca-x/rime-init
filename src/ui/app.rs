@@ -846,11 +846,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn model_update_only_supported_for_wanxiang_schemas() {
+    fn model_update_supported_for_all_supported_schemas() {
         assert!(model_update_supported(Schema::WanxiangBase));
         assert!(model_update_supported(Schema::WanxiangMoqi));
-        assert!(!model_update_supported(Schema::Ice));
-        assert!(!model_update_supported(Schema::Frost));
+        assert!(model_update_supported(Schema::Ice));
+        assert!(model_update_supported(Schema::Frost));
     }
 
     #[test]

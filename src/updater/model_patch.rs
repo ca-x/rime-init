@@ -163,4 +163,22 @@ mod tests {
 
         std::fs::remove_dir_all(&dir).ok();
     }
+
+    #[test]
+    fn patch_round_trip_supports_non_wanxiang_schemas() {
+        let dir = temp_rime_dir("model-patch-cross-schema");
+
+        patch_model(&dir, &Schema::Ice).expect("patch ice model");
+        assert!(is_model_patched(&dir, &Schema::Ice));
+
+        patch_model(&dir, &Schema::Frost).expect("patch frost model");
+        assert!(is_model_patched(&dir, &Schema::Frost));
+
+        unpatch_model(&dir, &Schema::Ice).expect("unpatch ice model");
+        unpatch_model(&dir, &Schema::Frost).expect("unpatch frost model");
+        assert!(!is_model_patched(&dir, &Schema::Ice));
+        assert!(!is_model_patched(&dir, &Schema::Frost));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
 }
