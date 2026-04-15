@@ -317,3 +317,82 @@ pub struct UpdateStatus {
     pub needs_update: bool,
     pub message: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_schema_display() {
+        assert_eq!(Schema::WanxiangBase.display_name(), "万象拼音 (标准版)");
+        assert_eq!(Schema::Ice.display_name(), "雾凇拼音");
+        assert_eq!(Schema::Frost.display_name(), "白霜拼音");
+    }
+
+    #[test]
+    fn test_schema_is_wanxiang() {
+        assert!(Schema::WanxiangBase.is_wanxiang());
+        assert!(Schema::WanxiangMoqi.is_wanxiang());
+        assert!(!Schema::Ice.is_wanxiang());
+        assert!(!Schema::Frost.is_wanxiang());
+    }
+
+    #[test]
+    fn test_schema_supports_model_patch() {
+        assert!(Schema::WanxiangBase.supports_model_patch());
+        assert!(!Schema::Ice.supports_model_patch());
+        assert!(!Schema::Frost.supports_model_patch());
+    }
+
+    #[test]
+    fn test_schema_from_str() {
+        assert_eq!("wanxiang".parse::<Schema>().unwrap(), Schema::WanxiangBase);
+        assert_eq!("ice".parse::<Schema>().unwrap(), Schema::Ice);
+        assert_eq!("雾凇".parse::<Schema>().unwrap(), Schema::Ice);
+        assert_eq!("frost".parse::<Schema>().unwrap(), Schema::Frost);
+        assert_eq!("白霜".parse::<Schema>().unwrap(), Schema::Frost);
+        assert!("unknown".parse::<Schema>().is_err());
+    }
+
+    #[test]
+    fn test_schema_zip_names() {
+        assert_eq!(Schema::WanxiangBase.scheme_zip(), "rime-wanxiang-base.zip");
+        assert_eq!(Schema::Ice.scheme_zip(), "full.zip");
+        assert_eq!(Schema::Frost.scheme_zip(), "rime-frost-schemas.zip");
+    }
+
+    #[test]
+    fn test_schema_dict_zip() {
+        assert_eq!(Schema::WanxiangBase.dict_zip(), Some("base-dicts.zip"));
+        assert_eq!(Schema::Ice.dict_zip(), Some("all_dicts.zip"));
+        assert_eq!(Schema::Frost.dict_zip(), None);
+    }
+
+    #[test]
+    fn test_schema_owner_repo() {
+        assert_eq!(Schema::WanxiangBase.owner(), "amzxyz");
+        assert_eq!(Schema::WanxiangBase.repo(), "rime_wanxiang");
+        assert_eq!(Schema::Ice.owner(), "iDvel");
+        assert_eq!(Schema::Ice.repo(), "rime-ice");
+        assert_eq!(Schema::Frost.owner(), "gaboolic");
+        assert_eq!(Schema::Frost.repo(), "rime-frost");
+    }
+
+    #[test]
+    fn test_schema_id() {
+        assert_eq!(Schema::WanxiangBase.schema_id(), "wanxiang");
+        assert_eq!(Schema::WanxiangMoqi.schema_id(), "wanxiang_pro");
+        assert_eq!(Schema::Ice.schema_id(), "rime_ice");
+        assert_eq!(Schema::Frost.schema_id(), "frost");
+    }
+
+    #[test]
+    fn test_config_defaults() {
+        let config = Config::default();
+        assert_eq!(config.schema, Schema::WanxiangBase);
+        assert!(!config.use_mirror);
+        assert!(!config.proxy_enabled);
+        assert!(!config.model_patch_enabled);
+        assert_eq!(config.language, "zh");
+    }
+}

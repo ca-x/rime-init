@@ -1,32 +1,43 @@
 use crate::config::{self, Manager};
+use crate::i18n::{L10n, Lang};
 use crate::types::Schema;
 use crate::updater;
 use anyhow::Result;
 
-/// 首次初始化向导 (纯文本，不使用 TUI)
+/// 首次初始化向导
 pub async fn run_init_wizard() -> Result<()> {
-    println!("\n🚀 rime-init 首次初始化向导\n");
+    let manager = Manager::new()?;
+    let lang = Lang::from_str(&manager.config.language);
+    let t = L10n::new(lang);
+
+    println!("\n🚀 rime-init {}\n", t.t("wizard.title"));
 
     // 1. 检测引擎
     let engines = config::detect_installed_engines();
     if engines.is_empty() {
-        println!("⚠️  未检测到已安装的 Rime 输入法引擎");
-        println!("请先安装:");
-        println!("  • 小狼毫 (Weasel) - Windows");
-        println!("  • 鼠须管 (Squirrel) - macOS");
-        println!("  • Fcitx5 + Rime - Linux: sudo pacman -S fcitx5-im fcitx5-rime");
+        println!("⚠️  {}", t.t("wizard.no_engine"));
+        if lang == Lang::Zh {
+            println!("请先安装:");
+            println!("  • 小狼毫 (Weasel) - Windows");
+            println!("  • 鼠须管 (Squirrel) - macOS");
+            println!("  • Fcitx5 + Rime - Linux");
+        } else {
+            println!("Install one of:");
+            println!("  • Weasel - Windows");
+            println!("  • Squirrel - macOS");
+            println!("  • Fcitx5 + Rime - Linux");
+        }
         return Ok(());
     }
-    println!("✅ 检测到引擎: {}\n", engines.join(", "));
+    println!("✅ {}: {}\n", t.t("wizard.engine_found"), engines.join(", "));
 
     // 2. 选择方案
-    println!("选择方案:");
+    println!("{}:", t.t("wizard.select_scheme"));
     let schemas = Schema::all();
     for (i, s) in schemas.iter().enumerate() {
-        let tag = if s.is_wanxiang() { "万象" } else { "通用" };
-        println!("  {:2}. {} [{}]", i + 1, s.display_name(), tag);
+        println!("  {:2}. {}", i + 1, s.display_name());
     }
-    print!("\n编号 [1]: ");
+    print!("\n[1]: ");
     std::io::Write::flush(&mut std::io::stdout())?;
 
     let mut input = String::new();
@@ -39,7 +50,7 @@ pub async fn run_init_wizard() -> Result<()> {
     // 3. 模型 patch
     let mut model_patch = false;
     if schema.supports_model_patch() {
-        print!("启用语言模型 patch? (y/N): ");
+        print!("{} (y/N): ", t.t("wizard.enable_model_patch"));
         std::io::Write::flush(&mut std::io::stdout())?;
         input.clear();
         std::io::stdin().read_line(&mut input)?;
@@ -53,7 +64,7 @@ pub async fn run_init_wizard() -> Result<()> {
     manager.save()?;
 
     // 5. 执行更新
-    println!("\n📦 下载安装中...\n");
+    println!("\n📦 {}...\n", t.t("wizard.downloading"));
     let cache_dir = manager.cache_dir.clone();
     let rime_dir = manager.rime_dir.clone();
 
@@ -68,18 +79,12 @@ pub async fn run_init_wizard() -> Result<()> {
         },
     ).await?;
 
-    // 6. Patch
-    if model_patch && schema.supports_model_patch() {
-        println!("\n🔧 模型 patch...");
-        updater::model_patch::patch_model(&rime_dir, &schema)?;
+    println!("\n✅ {}!\n", t.t("wizard.complete"));
+    if lang == Lang::Zh {
+        println!("运行 `rime-init` 打开 TUI");
+    } else {
+        println!("Run `rime-init` to open TUI");
     }
 
-    // 7. 部署
-    println!("🔄 部署...");
-    if let Err(e) = crate::deployer::deploy() {
-        println!("⚠️  部署失败: {e} (可手动部署)");
-    }
-
-    println!("\n✅ 完成！运行 `rime-init` 打开 TUI\n");
     Ok(())
 }

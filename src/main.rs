@@ -6,6 +6,7 @@ mod fileutil;
 mod deployer;
 mod skin;
 mod ui;
+mod i18n;
 
 use clap::Parser;
 
@@ -43,6 +44,10 @@ struct Cli {
     /// 代理地址 (socks5://host:port 或 http://host:port)
     #[arg(long)]
     proxy: Option<String>,
+
+    /// 语言 (zh/en)
+    #[arg(long)]
+    lang: Option<String>,
 }
 
 #[tokio::main]
@@ -69,6 +74,9 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 manager.config.proxy_address = proxy.clone();
             }
+        }
+        if let Some(ref lang) = cli.lang {
+            manager.config.language = lang.clone();
         }
 
         let schema = manager.config.schema;
