@@ -25,10 +25,7 @@ pub fn patch_model(rime_dir: &Path, schema: &Schema) -> Result<()> {
         .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
 
     if let serde_yaml::Value::Mapping(mapping) = patch {
-        mapping.insert(
-            serde_yaml::Value::String(MODEL_KEY.into()),
-            serde_yaml::Value::String(MODEL_VALUE.into()),
-        );
+        apply_patch_values(mapping, schema);
     } else {
         anyhow::bail!("模型 patch 文件中的 `{PATCH_KEY}` 节不是映射类型");
     }
@@ -51,7 +48,7 @@ pub fn unpatch_model(rime_dir: &Path, schema: &Schema) -> Result<()> {
 
     if let Some(patch) = doc.get_mut(PATCH_KEY) {
         if let serde_yaml::Value::Mapping(mapping) = patch {
-            mapping.remove(serde_yaml::Value::String(MODEL_KEY.to_string()));
+            remove_patch_values(mapping, schema);
         } else {
             anyhow::bail!("模型 patch 文件中的 `{PATCH_KEY}` 节不是映射类型");
         }
@@ -68,7 +65,7 @@ pub fn is_model_patched(rime_dir: &Path, schema: &Schema) -> bool {
     let patch_file = patch_file_path(rime_dir, schema);
 
     match load_patch_doc(&patch_file) {
-        Ok(doc) => has_model_patch(&doc),
+        Ok(doc) => has_model_patch(&doc, schema),
         Err(e) => {
             eprintln!("⚠️ 读取模型 patch 状态失败: {e}");
             false
@@ -101,13 +98,66 @@ fn write_patch_doc(path: &Path, doc: &PatchDoc) -> Result<()> {
     Ok(())
 }
 
-fn has_model_patch(doc: &PatchDoc) -> bool {
+fn has_model_patch(doc: &PatchDoc, schema: &Schema) -> bool {
     match doc.get(PATCH_KEY) {
         Some(serde_yaml::Value::Mapping(mapping)) => {
-            mapping.contains_key(serde_yaml::Value::String(MODEL_KEY.into()))
+            has_expected_patch(mapping, patch_spec_for_schema(schema))
         }
         _ => false,
     }
+}
+
+fn patch_spec_for_schema(schema: &Schema) -> Vec<(&'static str, serde_yaml::Value)> {
+    match schema {
+        Schema::Ice | Schema::Frost => vec![
+            (
+                "grammar/language",
+                serde_yaml::Value::String(MODEL_VALUE.into()),
+            ),
+            (
+                "grammar/collocation_max_length",
+                serde_yaml::Value::Number(5.into()),
+            ),
+            (
+                "grammar/collocation_min_length",
+                serde_yaml::Value::Number(2.into()),
+            ),
+            (
+                "translator/contextual_suggestions",
+                serde_yaml::Value::Bool(true),
+            ),
+            (
+                "translator/max_homophones",
+                serde_yaml::Value::Number(7.into()),
+            ),
+            (
+                "translator/max_homographs",
+                serde_yaml::Value::Number(7.into()),
+            ),
+        ],
+        _ => vec![(MODEL_KEY, serde_yaml::Value::String(MODEL_VALUE.into()))],
+    }
+}
+
+fn apply_patch_values(mapping: &mut serde_yaml::Mapping, schema: &Schema) {
+    for (key, value) in patch_spec_for_schema(schema) {
+        mapping.insert(serde_yaml::Value::String(key.into()), value);
+    }
+}
+
+fn remove_patch_values(mapping: &mut serde_yaml::Mapping, schema: &Schema) {
+    for (key, _) in patch_spec_for_schema(schema) {
+        mapping.remove(serde_yaml::Value::String(key.into()));
+    }
+}
+
+fn has_expected_patch(
+    mapping: &serde_yaml::Mapping,
+    expected: Vec<(&'static str, serde_yaml::Value)>,
+) -> bool {
+    expected
+        .into_iter()
+        .all(|(key, value)| mapping.get(serde_yaml::Value::String(key.into())) == Some(&value))
 }
 
 #[cfg(test)]
@@ -178,6 +228,72 @@ mod tests {
         unpatch_model(&dir, &Schema::Frost).expect("unpatch frost model");
         assert!(!is_model_patched(&dir, &Schema::Ice));
         assert!(!is_model_patched(&dir, &Schema::Frost));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn ice_patch_matches_reference_integrator_shape() {
+        let dir = temp_rime_dir("model-patch-ice-shape");
+
+        patch_model(&dir, &Schema::Ice).expect("patch ice model");
+
+        let patch_file = patch_file_path(&dir, &Schema::Ice);
+        let doc = load_patch_doc(&patch_file).expect("load patch doc");
+        let patch = match doc.get(PATCH_KEY) {
+            Some(serde_yaml::Value::Mapping(mapping)) => mapping,
+            other => panic!("unexpected patch mapping: {other:?}"),
+        };
+
+        assert_eq!(
+            patch.get(serde_yaml::Value::String("grammar/language".into())),
+            Some(&serde_yaml::Value::String(MODEL_VALUE.into()))
+        );
+        assert_eq!(
+            patch.get(serde_yaml::Value::String(
+                "translator/contextual_suggestions".into()
+            )),
+            Some(&serde_yaml::Value::Bool(true))
+        );
+        assert_eq!(
+            patch.get(serde_yaml::Value::String(
+                "translator/max_homophones".into()
+            )),
+            Some(&serde_yaml::Value::Number(7.into()))
+        );
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn frost_patch_matches_ice_shape() {
+        let dir = temp_rime_dir("model-patch-frost-shape");
+
+        patch_model(&dir, &Schema::Frost).expect("patch frost model");
+
+        let patch_file = patch_file_path(&dir, &Schema::Frost);
+        let doc = load_patch_doc(&patch_file).expect("load patch doc");
+        let patch = match doc.get(PATCH_KEY) {
+            Some(serde_yaml::Value::Mapping(mapping)) => mapping,
+            other => panic!("unexpected patch mapping: {other:?}"),
+        };
+
+        assert_eq!(
+            patch.get(serde_yaml::Value::String("grammar/language".into())),
+            Some(&serde_yaml::Value::String(MODEL_VALUE.into()))
+        );
+        assert_eq!(
+            patch.get(serde_yaml::Value::String(
+                "translator/contextual_suggestions".into()
+            )),
+            Some(&serde_yaml::Value::Bool(true))
+        );
+        assert_eq!(
+            patch.get(serde_yaml::Value::String(
+                "translator/max_homographs".into()
+            )),
+            Some(&serde_yaml::Value::Number(7.into()))
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
