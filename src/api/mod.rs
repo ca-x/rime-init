@@ -58,22 +58,22 @@ impl Client {
     fn github_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         if !self.github_token.is_empty() {
-            headers.insert(
-                AUTHORIZATION,
-                format!("Bearer {}", self.github_token).parse().unwrap(),
-            );
+            if let Ok(val) = format!("Bearer {}", self.github_token).parse() {
+                headers.insert(AUTHORIZATION, val);
+            }
         }
         headers
     }
 
     fn cnb_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(ACCEPT, "application/vnd.cnb.web+json".parse().unwrap());
+        if let Ok(val) = "application/vnd.cnb.web+json".parse() {
+            headers.insert(ACCEPT, val);
+        }
         if !self.github_token.is_empty() {
-            headers.insert(
-                AUTHORIZATION,
-                format!("Bearer {}", self.github_token).parse().unwrap(),
-            );
+            if let Ok(val) = format!("Bearer {}", self.github_token).parse() {
+                headers.insert(AUTHORIZATION, val);
+            }
         }
         headers
     }
@@ -93,25 +93,39 @@ impl Client {
             format!("{GITHUB_API}/repos/{owner}/{repo}/releases/tags/{tag}")
         };
 
-        let resp = self
-            .http
-            .get(&url)
-            .headers(self.github_headers())
-            .send()
-            .await
-            .context("GitHub API 请求失败")?;
+        let mut last_err = None;
+        for attempt in 0..3 {
+            if attempt > 0 {
+                let delay = std::time::Duration::from_secs(1 << attempt);
+                tokio::time::sleep(delay).await;
+            }
 
-        if !resp.status().is_success() {
-            anyhow::bail!("GitHub API 返回 {}", resp.status());
-        }
+            let resp = self
+                .http
+                .get(&url)
+                .headers(self.github_headers())
+                .send()
+                .await;
 
-        if tag.is_empty() {
-            let releases: Vec<GitHubRelease> = resp.json().await?;
-            Ok(releases)
-        } else {
-            let release: GitHubRelease = resp.json().await?;
-            Ok(vec![release])
+            match resp {
+                Ok(r) if r.status().is_success() => {
+                    if tag.is_empty() {
+                        let releases: Vec<GitHubRelease> = r.json().await?;
+                        return Ok(releases);
+                    } else {
+                        let release: GitHubRelease = r.json().await?;
+                        return Ok(vec![release]);
+                    }
+                }
+                Ok(r) => {
+                    last_err = Some(anyhow::anyhow!("GitHub API 返回 {}", r.status()));
+                }
+                Err(e) => {
+                    last_err = Some(anyhow::anyhow!("GitHub API 请求失败: {e}"));
+                }
+            }
         }
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("GitHub API 请求失败")))
     }
 
     // ── CNB 镜像 ──
@@ -124,20 +138,35 @@ impl Client {
         tag: &str,
     ) -> Result<GitHubRelease> {
         let url = format!("{CNB_BASE}/{owner}/{repo}/-/releases/tags/{tag}");
-        let resp = self
-            .http
-            .get(&url)
-            .headers(self.cnb_headers())
-            .send()
-            .await
-            .context("CNB API 请求失败")?;
 
-        if !resp.status().is_success() {
-            anyhow::bail!("CNB API 返回 {}", resp.status());
+        let mut last_err = None;
+        for attempt in 0..3 {
+            if attempt > 0 {
+                let delay = std::time::Duration::from_secs(1 << attempt);
+                tokio::time::sleep(delay).await;
+            }
+
+            let resp = self
+                .http
+                .get(&url)
+                .headers(self.cnb_headers())
+                .send()
+                .await;
+
+            match resp {
+                Ok(r) if r.status().is_success() => {
+                    let release: GitHubRelease = r.json().await?;
+                    return Ok(release);
+                }
+                Ok(r) => {
+                    last_err = Some(anyhow::anyhow!("CNB API 返回 {}", r.status()));
+                }
+                Err(e) => {
+                    last_err = Some(anyhow::anyhow!("CNB API 请求失败: {e}"));
+                }
+            }
         }
-
-        let release: GitHubRelease = resp.json().await?;
-        Ok(release)
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("CNB API 请求失败")))
     }
 
     /// 获取 CNB 最新 tag
@@ -169,6 +198,11 @@ impl Client {
         mut progress: impl FnMut(u64, Option<u64>),
     ) -> Result<()> {
         let resp = self.http.get(url).send().await?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("下载失败: HTTP {}", resp.status());
+        }
+
         let total = resp.content_length();
 
         let mut file = tokio::fs::File::create(dest).await?;

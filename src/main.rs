@@ -139,18 +139,22 @@ async fn main() -> anyhow::Result<()> {
                 eprintln!("此方案无独立词库");
             }
         } else if cli.model {
-            let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir.clone())?;
-            updater::wanxiang::WanxiangUpdater { base }
-                .update_model(&manager.config, |msg, pct| {
-                    print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
-                })
-                .await?;
+            if !schema.supports_model_patch() {
+                eprintln!("此方案不支持模型更新");
+            } else {
+                let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir.clone())?;
+                updater::wanxiang::WanxiangUpdater { base }
+                    .update_model(&manager.config, |msg, pct| {
+                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                        std::io::Write::flush(&mut std::io::stdout()).ok();
+                    })
+                    .await?;
 
-            if cli.patch_model && schema.supports_model_patch() {
-                updater::model_patch::patch_model(&rime_dir, &schema)?;
+                if cli.patch_model {
+                    updater::model_patch::patch_model(&rime_dir, &schema)?;
+                }
+                println!();
             }
-            println!();
         }
     } else {
         // 默认启动 TUI

@@ -40,6 +40,9 @@ impl BaseUpdater {
     /// 保存更新记录
     pub fn save_record(path: &Path, record: &UpdateRecord) -> Result<()> {
         let json = serde_json::to_string_pretty(record)?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         std::fs::write(path, json)?;
         Ok(())
     }
