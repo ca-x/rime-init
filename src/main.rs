@@ -9,6 +9,7 @@ mod ui;
 mod updater;
 
 use clap::Parser;
+use types::Schema;
 
 #[derive(Parser, Debug)]
 #[command(name = "snout", version, about = "Rime 输入法初始化与更新工具")]
@@ -92,32 +93,55 @@ async fn main() -> anyhow::Result<()> {
             println!();
         } else if cli.scheme {
             let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir)?;
-            let scheme_updater = updater::SchemeUpdater { base };
-            scheme_updater
-                .run(&schema, &manager.config, |msg, pct| {
-                    print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
-                })
-                .await?;
+            if schema.is_wanxiang() {
+                updater::wanxiang::WanxiangUpdater { base }
+                    .update_scheme(&schema, &manager.config, |msg, pct| {
+                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                        std::io::Write::flush(&mut std::io::stdout()).ok();
+                    })
+                    .await?;
+            } else if schema == Schema::Ice {
+                updater::ice::IceUpdater { base }
+                    .update_scheme(&manager.config, |msg, pct| {
+                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                        std::io::Write::flush(&mut std::io::stdout()).ok();
+                    })
+                    .await?;
+            } else {
+                updater::frost::FrostUpdater { base }
+                    .update_scheme(&manager.config, |msg, pct| {
+                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                        std::io::Write::flush(&mut std::io::stdout()).ok();
+                    })
+                    .await?;
+            }
             println!();
         } else if cli.dict {
             if schema.dict_zip().is_some() {
                 let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir)?;
-                let dict = updater::DictUpdater { base };
-                dict.run(&schema, &manager.config, |msg, pct| {
-                    print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
-                    std::io::Write::flush(&mut std::io::stdout()).ok();
-                })
-                .await?;
+                if schema.is_wanxiang() {
+                    updater::wanxiang::WanxiangUpdater { base }
+                        .update_dict(&schema, &manager.config, |msg, pct| {
+                            print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                            std::io::Write::flush(&mut std::io::stdout()).ok();
+                        })
+                        .await?;
+                } else {
+                    updater::ice::IceUpdater { base }
+                        .update_dict(&manager.config, |msg, pct| {
+                            print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                            std::io::Write::flush(&mut std::io::stdout()).ok();
+                        })
+                        .await?;
+                }
                 println!();
             } else {
                 eprintln!("此方案无独立词库");
             }
         } else if cli.model {
             let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir.clone())?;
-            let model = updater::ModelUpdater { base };
-            model
-                .run(&manager.config, |msg, pct| {
+            updater::wanxiang::WanxiangUpdater { base }
+                .update_model(&manager.config, |msg, pct| {
                     print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
                     std::io::Write::flush(&mut std::io::stdout()).ok();
                 })

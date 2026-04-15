@@ -330,29 +330,56 @@ async fn start_update(app: &mut App, manager: &Manager, mode: UpdateMode) -> Res
 
     let results = match mode {
         UpdateMode::All => {
-            updater::update_all(&schema, &config, cache_dir, rime_dir, |_msg, _pct| {
-                // 注意: 在真实 TUI 中这里应该用 channel 更新 app 状态
-                // 简化版直接打印到 stdout (会被 TUI 覆盖)
-            })
-            .await
+            updater::update_all(&schema, &config, cache_dir, rime_dir, |_msg, _pct| {}).await
         }
         UpdateMode::Scheme => {
-            let base = updater::BaseUpdater::new(&config, cache_dir, rime_dir).unwrap();
-            let scheme = updater::SchemeUpdater { base };
-            scheme
-                .run(&schema, &config, |_, _| {})
-                .await
-                .map(|r| vec![r])
+            let base =
+                updater::BaseUpdater::new(&config, cache_dir.clone(), rime_dir.clone()).unwrap();
+            if schema.is_wanxiang() {
+                updater::wanxiang::WanxiangUpdater { base }
+                    .update_scheme(&schema, &config, |_, _| {})
+                    .await
+                    .map(|r| vec![r])
+            } else if schema == Schema::Ice {
+                updater::ice::IceUpdater { base }
+                    .update_scheme(&config, |_, _| {})
+                    .await
+                    .map(|r| vec![r])
+            } else {
+                updater::frost::FrostUpdater { base }
+                    .update_scheme(&config, |_, _| {})
+                    .await
+                    .map(|r| vec![r])
+            }
         }
         UpdateMode::Dict => {
-            let base = updater::BaseUpdater::new(&config, cache_dir, rime_dir).unwrap();
-            let dict = updater::DictUpdater { base };
-            dict.run(&schema, &config, |_, _| {}).await.map(|r| vec![r])
+            if schema.dict_zip().is_none() {
+                Ok(vec![updater::UpdateResult {
+                    component: "词库".into(),
+                    old_version: "-".into(),
+                    new_version: "-".into(),
+                    success: false,
+                    message: "此方案无独立词库".into(),
+                }])
+            } else {
+                let base = updater::BaseUpdater::new(&config, cache_dir, rime_dir).unwrap();
+                if schema.is_wanxiang() {
+                    updater::wanxiang::WanxiangUpdater { base }
+                        .update_dict(&schema, &config, |_, _| {})
+                        .await
+                        .map(|r| vec![r])
+                } else {
+                    updater::ice::IceUpdater { base }
+                        .update_dict(&config, |_, _| {})
+                        .await
+                        .map(|r| vec![r])
+                }
+            }
         }
         UpdateMode::Model => {
             let base = updater::BaseUpdater::new(&config, cache_dir, rime_dir.clone()).unwrap();
-            let model = updater::ModelUpdater { base };
-            let r = model.run(&config, |_, _| {}).await?;
+            let wx = updater::wanxiang::WanxiangUpdater { base };
+            let r = wx.update_model(&config, |_, _| {}).await?;
             let mut v = vec![r];
             if config.model_patch_enabled && schema.supports_model_patch() {
                 if let Err(e) = updater::model_patch::patch_model(&rime_dir, &schema) {
