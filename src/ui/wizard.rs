@@ -17,9 +17,9 @@ pub async fn run_init_wizard() -> Result<()> {
     if engines.is_empty() {
         println!("⚠️  {}", t.t("wizard.no_engine"));
         println!("{}", t.t("wizard.install_one_of"));
-        println!("  • Weasel - Windows");
-        println!("  • Squirrel - macOS");
-        println!("  • Fcitx5 + Rime - Linux");
+        println!("  • {}", t.t("wizard.install.weasel"));
+        println!("  • {}", t.t("wizard.install.squirrel"));
+        println!("  • {}", t.t("wizard.install.fcitx5"));
         return Ok(());
     }
     println!(
@@ -70,8 +70,9 @@ pub async fn run_init_wizard() -> Result<()> {
         &manager.config,
         cache_dir,
         rime_dir.clone(),
-        |msg, pct| {
-            print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+        crate::types::CancelSignal::new(),
+        |event| {
+            print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
             std::io::Write::flush(&mut std::io::stdout()).ok();
         },
     )

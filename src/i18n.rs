@@ -74,6 +74,12 @@ impl L10n {
         en.insert("wizard.enable_model_patch", "Enable language model patch?");
         zh.insert("wizard.install_one_of", "请先安装:");
         en.insert("wizard.install_one_of", "Install one of:");
+        zh.insert("wizard.install.weasel", "小狼毫 - Windows");
+        en.insert("wizard.install.weasel", "Weasel - Windows");
+        zh.insert("wizard.install.squirrel", "鼠须管 - macOS");
+        en.insert("wizard.install.squirrel", "Squirrel - macOS");
+        zh.insert("wizard.install.fcitx5", "Fcitx5 + Rime - Linux");
+        en.insert("wizard.install.fcitx5", "Fcitx5 + Rime - Linux");
         zh.insert("wizard.open_tui", "运行 `snout` 打开 TUI");
         en.insert("wizard.open_tui", "Run `snout` to open TUI");
         zh.insert("wizard.downloading", "下载安装中...");
@@ -94,6 +100,12 @@ impl L10n {
         en.insert("update.deploying", "Deploying...");
         zh.insert("update.complete", "更新完成");
         en.insert("update.complete", "Update complete");
+        zh.insert("update.partial", "更新完成，但有问题");
+        en.insert("update.partial", "Update completed with issues");
+        zh.insert("update.cancelling", "正在取消...");
+        en.insert("update.cancelling", "Cancelling...");
+        zh.insert("update.cancelled", "更新已取消");
+        en.insert("update.cancelled", "Update cancelled");
         zh.insert("update.up_to_date", "已是最新版本");
         en.insert("update.up_to_date", "Already up to date");
         zh.insert("status.not_installed", "未安装");
@@ -119,6 +131,42 @@ impl L10n {
         en.insert("deploy.complete", "Rime reloaded");
         zh.insert("deploy.failed", "部署失败");
         en.insert("deploy.failed", "Deploy failed");
+        zh.insert("deploy.reloaded.fcitx5", "Fcitx5 已重载");
+        en.insert("deploy.reloaded.fcitx5", "Fcitx5 reloaded");
+        zh.insert("deploy.reloaded.ibus", "IBus 已重载");
+        en.insert("deploy.reloaded.ibus", "IBus reloaded");
+        zh.insert("deploy.reloaded.squirrel", "鼠须管已重载");
+        en.insert("deploy.reloaded.squirrel", "Squirrel reloaded");
+        zh.insert("deploy.reloaded.weasel", "小狼毫已重载");
+        en.insert("deploy.reloaded.weasel", "Weasel reloaded");
+        zh.insert("deploy.target_failed", "部署到目标引擎失败");
+        en.insert("deploy.target_failed", "Failed to deploy to target engine");
+        zh.insert("deploy.sync_partial_failed", "部分引擎同步失败");
+        en.insert("deploy.sync_partial_failed", "Partial engine sync failed");
+        zh.insert("deploy.symlink_created", "已创建软链接");
+        en.insert("deploy.symlink_created", "Symlink created");
+        zh.insert("deploy.synced_to", "已同步到");
+        en.insert("deploy.synced_to", "Synced to");
+        zh.insert("deploy.hook_missing", "hook 不存在");
+        en.insert("deploy.hook_missing", "Hook does not exist");
+        zh.insert("deploy.hook_running", "执行 hook");
+        en.insert("deploy.hook_running", "Running hook");
+        zh.insert("deploy.hook_failed", "hook 执行失败");
+        en.insert("deploy.hook_failed", "Hook execution failed");
+        zh.insert("deploy.binary_not_found", "未找到可执行文件");
+        en.insert("deploy.binary_not_found", "Binary not found");
+        zh.insert("deploy.no_engine_detected", "未检测到 Rime 引擎");
+        en.insert("deploy.no_engine_detected", "No Rime engine detected");
+        zh.insert("deploy.all_engines_failed", "所有 Rime 引擎部署失败");
+        en.insert(
+            "deploy.all_engines_failed",
+            "All Rime engine deployments failed",
+        );
+        zh.insert("deploy.partial_engines_failed", "部分引擎部署失败");
+        en.insert(
+            "deploy.partial_engines_failed",
+            "Some engine deployments failed",
+        );
 
         // ── 更新进度 ──
         zh.insert("update.scheme.checking", "检查方案更新...");
@@ -170,6 +218,21 @@ impl L10n {
         en.insert("update.progress", "Progress");
         zh.insert("update.deploying", "部署...");
         en.insert("update.deploying", "Deploying...");
+        zh.insert("update.syncing", "同步引擎目录...");
+        en.insert("update.syncing", "Syncing engine directories...");
+        zh.insert("update.nested_dir_failed", "嵌套目录处理失败");
+        en.insert(
+            "update.nested_dir_failed",
+            "Nested directory handling failed",
+        );
+        zh.insert("update.component.model_patch", "模型 Patch");
+        en.insert("update.component.model_patch", "Model Patch");
+        zh.insert("update.component.deploy", "部署");
+        en.insert("update.component.deploy", "Deploy");
+        zh.insert("update.component.hook", "Hook");
+        en.insert("update.component.hook", "Hook");
+        zh.insert("update.component.sync", "引擎同步");
+        en.insert("update.component.sync", "Engine Sync");
 
         // ── 部署 ──
 
@@ -182,6 +245,30 @@ impl L10n {
         en.insert(
             "patch.model.not_supported",
             "This scheme does not support model patch",
+        );
+        zh.insert(
+            "patch.model.section_invalid",
+            "模型 patch 文件中的 patch 节不是映射类型",
+        );
+        en.insert(
+            "patch.model.section_invalid",
+            "The patch section in the model patch file is not a mapping",
+        );
+        zh.insert("patch.model.written", "模型 patch 已写入");
+        en.insert("patch.model.written", "Model patch written");
+        zh.insert("patch.model.removed", "模型 patch 已移除");
+        en.insert("patch.model.removed", "Model patch removed");
+        zh.insert("patch.model.status_read_failed", "读取模型 patch 状态失败");
+        en.insert(
+            "patch.model.status_read_failed",
+            "Failed to read model patch status",
+        );
+        zh.insert("patch.model.read_failed", "读取模型 patch 文件失败");
+        en.insert("patch.model.read_failed", "Failed to read model patch file");
+        zh.insert("patch.model.parse_failed", "解析模型 patch 文件失败");
+        en.insert(
+            "patch.model.parse_failed",
+            "Failed to parse model patch file",
         );
 
         // ── 皮肤 ──
@@ -210,6 +297,34 @@ impl L10n {
         );
         zh.insert("scheme.switched", "方案已切换");
         en.insert("scheme.switched", "Scheme switched");
+        zh.insert("schema.wanxiang_base", "万象拼音 (标准版)");
+        en.insert("schema.wanxiang_base", "Wanxiang (Base)");
+        zh.insert("schema.wanxiang_moqi", "万象拼音 Pro (墨奇辅助)");
+        en.insert("schema.wanxiang_moqi", "Wanxiang Pro (Moqi)");
+        zh.insert("schema.wanxiang_flypy", "万象拼音 Pro (小鹤辅助)");
+        en.insert("schema.wanxiang_flypy", "Wanxiang Pro (Flypy)");
+        zh.insert("schema.wanxiang_zrm", "万象拼音 Pro (自然码辅助)");
+        en.insert("schema.wanxiang_zrm", "Wanxiang Pro (Ziranma)");
+        zh.insert("schema.wanxiang_tiger", "万象拼音 Pro (虎码辅助)");
+        en.insert("schema.wanxiang_tiger", "Wanxiang Pro (Tiger Code)");
+        zh.insert("schema.wanxiang_wubi", "万象拼音 Pro (五笔辅助)");
+        en.insert("schema.wanxiang_wubi", "Wanxiang Pro (Wubi)");
+        zh.insert("schema.wanxiang_hanxin", "万象拼音 Pro (汉心辅助)");
+        en.insert("schema.wanxiang_hanxin", "Wanxiang Pro (Hanxin)");
+        zh.insert("schema.wanxiang_shouyou", "万象拼音 Pro (首右辅助)");
+        en.insert("schema.wanxiang_shouyou", "Wanxiang Pro (Shouyou)");
+        zh.insert("schema.wanxiang_shyplus", "万象拼音 Pro (首右+辅助)");
+        en.insert("schema.wanxiang_shyplus", "Wanxiang Pro (Shouyou+)");
+        zh.insert("schema.wanxiang_wx", "万象拼音 Pro (万象辅助)");
+        en.insert("schema.wanxiang_wx", "Wanxiang Pro (Wanxiang)");
+        zh.insert("schema.ice", "雾凇拼音");
+        en.insert("schema.ice", "Rime Ice");
+        zh.insert("schema.frost", "白霜拼音");
+        en.insert("schema.frost", "Rime Frost");
+        zh.insert("schema.mint", "薄荷输入法");
+        en.insert("schema.mint", "Mint Input");
+        zh.insert("schema.unknown", "未知方案");
+        en.insert("schema.unknown", "Unknown schema");
 
         // ── Hook ──
         zh.insert("hook.pre_update", "执行 pre-update hook");
@@ -235,6 +350,38 @@ impl L10n {
         zh.insert("err.no_model_file", "未找到模型文件");
         en.insert("err.no_model_file", "Model file not found");
 
+        // ── API / 网络 ──
+        zh.insert("api.proxy_unknown", "未知代理类型");
+        en.insert("api.proxy_unknown", "Unknown proxy type");
+        zh.insert("api.github_branch_status", "GitHub Branch API 返回");
+        en.insert("api.github_branch_status", "GitHub Branch API returned");
+        zh.insert(
+            "api.github_branch_missing_sha",
+            "GitHub Branch API 缺少 commit.sha",
+        );
+        en.insert(
+            "api.github_branch_missing_sha",
+            "GitHub Branch API is missing commit.sha",
+        );
+        zh.insert("api.github_status", "GitHub API 返回");
+        en.insert("api.github_status", "GitHub API returned");
+        zh.insert("api.github_request_failed", "GitHub API 请求失败");
+        en.insert("api.github_request_failed", "GitHub API request failed");
+        zh.insert("api.cnb_status", "CNB API 返回");
+        en.insert("api.cnb_status", "CNB API returned");
+        zh.insert("api.cnb_request_failed", "CNB API 请求失败");
+        en.insert("api.cnb_request_failed", "CNB API request failed");
+        zh.insert("api.cnb_no_release", "CNB 无 release");
+        en.insert("api.cnb_no_release", "CNB has no release");
+        zh.insert("api.download_retry", "下载失败，稍后重试");
+        en.insert("api.download_retry", "Download failed, retrying shortly");
+        zh.insert("api.download_request_failed", "下载请求失败");
+        en.insert("api.download_request_failed", "Download request failed");
+        zh.insert("api.download_http_failed", "下载失败: HTTP");
+        en.insert("api.download_http_failed", "Download failed: HTTP");
+        zh.insert("api.download_interrupted", "下载中断");
+        en.insert("api.download_interrupted", "Download interrupted");
+
         // ── 提示 ──
         zh.insert("hint.navigate", "导航");
         en.insert("hint.navigate", "Navigate");
@@ -242,10 +389,50 @@ impl L10n {
         en.insert("hint.confirm", "Confirm");
         zh.insert("hint.back", "返回/退出");
         en.insert("hint.back", "Back/Quit");
+        zh.insert("hint.wait", "处理中，请等待");
+        en.insert("hint.wait", "Working, please wait");
+        zh.insert("hint.cancel", "取消");
+        en.insert("hint.cancel", "Cancel");
+        zh.insert("hint.unavailable", "当前不可用");
+        en.insert("hint.unavailable", "Currently unavailable");
 
         // ── 配置 ──
         zh.insert("config.current_scheme", "当前方案");
         en.insert("config.current_scheme", "Current scheme");
+        zh.insert("config.detected_engines", "检测到的引擎");
+        en.insert("config.detected_engines", "Detected engines");
+        zh.insert("config.language_label", "语言");
+        en.insert("config.language_label", "Language");
+        zh.insert("config.mirror_label", "镜像下载");
+        en.insert("config.mirror_label", "Mirror downloads");
+        zh.insert("config.proxy_label", "代理");
+        en.insert("config.proxy_label", "Proxy");
+        zh.insert("config.model_patch_label", "自动模型 Patch");
+        en.insert("config.model_patch_label", "Auto model patch");
+        zh.insert("config.engine_sync_label", "多引擎同步");
+        en.insert("config.engine_sync_label", "Multi-engine sync");
+        zh.insert("config.sync_strategy_label", "同步方式");
+        en.insert("config.sync_strategy_label", "Sync strategy");
+        zh.insert("config.runtime_section", "当前状态");
+        en.insert("config.runtime_section", "Current setup");
+        zh.insert("config.features_section", "启用特性");
+        en.insert("config.features_section", "Enabled features");
+        zh.insert("config.paths_section", "路径");
+        en.insert("config.paths_section", "Paths");
+        zh.insert("config.enabled", "开启");
+        en.insert("config.enabled", "Enabled");
+        zh.insert("config.disabled", "关闭");
+        en.insert("config.disabled", "Disabled");
+        zh.insert("config.none", "无");
+        en.insert("config.none", "None");
+        zh.insert("config.sync_link", "软链接");
+        en.insert("config.sync_link", "Symlink");
+        zh.insert("config.sync_copy", "复制");
+        en.insert("config.sync_copy", "Copy");
+        zh.insert("config.lang.zh", "中文");
+        en.insert("config.lang.zh", "Chinese");
+        zh.insert("config.lang.en", "英文");
+        en.insert("config.lang.en", "English");
         zh.insert("config.rime_dir", "Rime 目录");
         en.insert("config.rime_dir", "Rime directory");
         zh.insert("config.config_file", "配置文件");
@@ -260,10 +447,39 @@ impl L10n {
         en.insert("config.scheme.frost", "Rime Frost: gaboolic/rime-frost");
         zh.insert("config.scheme.mint", "薄荷输入法: Mintimate/oh-my-rime");
         en.insert("config.scheme.mint", "Mint Input: Mintimate/oh-my-rime");
+        zh.insert("skin.jianchun", "简纯");
+        en.insert("skin.jianchun", "Jianchun");
+        zh.insert("skin.win11_light", "Win11浅色");
+        en.insert("skin.win11_light", "Win11 Light");
+        zh.insert("skin.win11_dark", "Win11暗色");
+        en.insert("skin.win11_dark", "Win11 Dark");
+        zh.insert("skin.wechat", "微信");
+        en.insert("skin.wechat", "WeChat");
+        zh.insert("skin.mac_light", "Mac 白");
+        en.insert("skin.mac_light", "Mac Light");
+        zh.insert("skin.reimu", "灵梦");
+        en.insert("skin.reimu", "Reimu");
         zh.insert("config.title", "配置信息");
         en.insert("config.title", "Config Info");
         zh.insert("config.back", "按 Esc 返回");
         en.insert("config.back", "Press Esc to return");
+        zh.insert(
+            "config.parse_failed_defaulting",
+            "配置文件解析失败，使用默认配置",
+        );
+        en.insert(
+            "config.parse_failed_defaulting",
+            "Failed to parse config file, using defaults",
+        );
+        zh.insert("config.appdata_missing", "APPDATA 未设置");
+        en.insert("config.appdata_missing", "APPDATA is not set");
+        zh.insert("config.home_missing", "无法获取 HOME");
+        en.insert("config.home_missing", "Failed to resolve HOME");
+        zh.insert("config.config_dir_missing", "无法获取 config 目录");
+        en.insert(
+            "config.config_dir_missing",
+            "Failed to resolve config directory",
+        );
         zh.insert("result.back_to_menu", "按 Enter 返回主菜单");
         en.insert("result.back_to_menu", "Press Enter to return to menu");
 

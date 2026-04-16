@@ -1,3 +1,4 @@
+use crate::i18n::{L10n, Lang};
 use crate::types::Schema;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
@@ -6,7 +7,7 @@ use std::path::Path;
 type PatchDoc = HashMap<String, serde_yaml::Value>;
 
 const PATCH_KEY: &str = "patch";
-const MODEL_KEY: &str = "grammar/language_model";
+const MODEL_KEY: &str = "grammar/language";
 const MODEL_VALUE: &str = "wanxiang-lts-zh-hans";
 
 /// 为当前方案写入万象模型 patch 配置
@@ -15,7 +16,7 @@ const MODEL_VALUE: &str = "wanxiang-lts-zh-hans";
 /// ```yaml
 /// patch:
 ///   # Wanxiang:
-///   grammar/language_model: wanxiang-lts-zh-hans
+///   grammar/language: wanxiang-lts-zh-hans
 ///
 ///   # Ice / Frost / Mint:
 ///   grammar/language: wanxiang-lts-zh-hans
@@ -25,9 +26,10 @@ const MODEL_VALUE: &str = "wanxiang-lts-zh-hans";
 ///   translator/max_homophones: 7
 ///   translator/max_homographs: 7
 /// ```
-pub fn patch_model(rime_dir: &Path, schema: &Schema) -> Result<()> {
+pub fn patch_model(rime_dir: &Path, schema: &Schema, lang: Lang) -> Result<()> {
+    let t = L10n::new(lang);
     let patch_file = patch_file_path(rime_dir, schema);
-    let mut doc = load_patch_doc(&patch_file)?;
+    let mut doc = load_patch_doc(&patch_file, &t)?;
 
     let patch = doc
         .entry(PATCH_KEY.into())
@@ -36,47 +38,53 @@ pub fn patch_model(rime_dir: &Path, schema: &Schema) -> Result<()> {
     if let serde_yaml::Value::Mapping(mapping) = patch {
         apply_patch_values(mapping, schema);
     } else {
-        anyhow::bail!("模型 patch 文件中的 `{PATCH_KEY}` 节不是映射类型");
+        anyhow::bail!("{}", t.t("patch.model.section_invalid"));
     }
 
     write_patch_doc(&patch_file, &doc)?;
 
-    println!("✅ 模型 patch 已写入: {}", patch_file.display());
+    println!(
+        "✅ {}: {}",
+        t.t("patch.model.written"),
+        patch_file.display()
+    );
     Ok(())
 }
 
 /// 移除模型 patch
-pub fn unpatch_model(rime_dir: &Path, schema: &Schema) -> Result<()> {
+pub fn unpatch_model(rime_dir: &Path, schema: &Schema, lang: Lang) -> Result<()> {
+    let t = L10n::new(lang);
     let patch_file = patch_file_path(rime_dir, schema);
 
     if !patch_file.exists() {
         return Ok(());
     }
 
-    let mut doc = load_patch_doc(&patch_file)?;
+    let mut doc = load_patch_doc(&patch_file, &t)?;
 
     if let Some(patch) = doc.get_mut(PATCH_KEY) {
         if let serde_yaml::Value::Mapping(mapping) = patch {
             remove_patch_values(mapping, schema);
         } else {
-            anyhow::bail!("模型 patch 文件中的 `{PATCH_KEY}` 节不是映射类型");
+            anyhow::bail!("{}", t.t("patch.model.section_invalid"));
         }
     }
 
     write_patch_doc(&patch_file, &doc)?;
 
-    println!("✅ 模型 patch 已移除");
+    println!("✅ {}", t.t("patch.model.removed"));
     Ok(())
 }
 
 /// 检查模型 patch 是否已启用
-pub fn is_model_patched(rime_dir: &Path, schema: &Schema) -> bool {
+pub fn is_model_patched(rime_dir: &Path, schema: &Schema, lang: Lang) -> bool {
+    let t = L10n::new(lang);
     let patch_file = patch_file_path(rime_dir, schema);
 
-    match load_patch_doc(&patch_file) {
+    match load_patch_doc(&patch_file, &t) {
         Ok(doc) => has_model_patch(&doc, schema),
         Err(e) => {
-            eprintln!("⚠️ 读取模型 patch 状态失败: {e}");
+            eprintln!("⚠️ {}: {e}", t.t("patch.model.status_read_failed"));
             false
         }
     }
@@ -86,15 +94,15 @@ fn patch_file_path(rime_dir: &Path, schema: &Schema) -> std::path::PathBuf {
     rime_dir.join(format!("{}.custom.yaml", schema.schema_id()))
 }
 
-fn load_patch_doc(path: &Path) -> Result<PatchDoc> {
+fn load_patch_doc(path: &Path, t: &L10n) -> Result<PatchDoc> {
     if !path.exists() {
         return Ok(HashMap::new());
     }
 
     let data = std::fs::read_to_string(path)
-        .with_context(|| format!("读取模型 patch 文件失败: {}", path.display()))?;
+        .with_context(|| format!("{}: {}", t.t("patch.model.read_failed"), path.display()))?;
     serde_yaml::from_str(&data)
-        .with_context(|| format!("解析模型 patch 文件失败: {}", path.display()))
+        .with_context(|| format!("{}: {}", t.t("patch.model.parse_failed"), path.display()))
 }
 
 fn write_patch_doc(path: &Path, doc: &PatchDoc) -> Result<()> {
@@ -190,7 +198,7 @@ mod tests {
         let file = patch_file_path(&dir, &Schema::WanxiangBase);
         std::fs::write(&file, "patch: [broken").expect("write invalid yaml");
 
-        let result = patch_model(&dir, &Schema::WanxiangBase);
+        let result = patch_model(&dir, &Schema::WanxiangBase, Lang::Zh);
 
         assert!(result.is_err());
         let err = result.expect_err("invalid yaml should fail");
@@ -205,7 +213,7 @@ mod tests {
         let file = patch_file_path(&dir, &Schema::WanxiangBase);
         std::fs::write(&file, "patch: [broken").expect("write invalid yaml");
 
-        assert!(!is_model_patched(&dir, &Schema::WanxiangBase));
+        assert!(!is_model_patched(&dir, &Schema::WanxiangBase, Lang::Zh));
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -214,11 +222,36 @@ mod tests {
     fn patch_and_unpatch_model_round_trip() {
         let dir = temp_rime_dir("model-patch-roundtrip");
 
-        patch_model(&dir, &Schema::WanxiangBase).expect("patch model");
-        assert!(is_model_patched(&dir, &Schema::WanxiangBase));
+        patch_model(&dir, &Schema::WanxiangBase, Lang::Zh).expect("patch model");
+        assert!(is_model_patched(&dir, &Schema::WanxiangBase, Lang::Zh));
 
-        unpatch_model(&dir, &Schema::WanxiangBase).expect("unpatch model");
-        assert!(!is_model_patched(&dir, &Schema::WanxiangBase));
+        unpatch_model(&dir, &Schema::WanxiangBase, Lang::Zh).expect("unpatch model");
+        assert!(!is_model_patched(&dir, &Schema::WanxiangBase, Lang::Zh));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn wanxiang_patch_matches_upstream_schema_shape() {
+        let dir = temp_rime_dir("model-patch-wanxiang-shape");
+
+        patch_model(&dir, &Schema::WanxiangBase, Lang::Zh).expect("patch wanxiang model");
+
+        let patch_file = patch_file_path(&dir, &Schema::WanxiangBase);
+        let doc = load_patch_doc(&patch_file, &L10n::new(Lang::Zh)).expect("load patch doc");
+        let patch = match doc.get(PATCH_KEY) {
+            Some(serde_yaml::Value::Mapping(mapping)) => mapping,
+            other => panic!("unexpected patch mapping: {other:?}"),
+        };
+
+        assert_eq!(
+            patch.get(serde_yaml::Value::String("grammar/language".into())),
+            Some(&serde_yaml::Value::String(MODEL_VALUE.into()))
+        );
+        assert_eq!(
+            patch.get(serde_yaml::Value::String("grammar/language_model".into())),
+            None
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -227,21 +260,21 @@ mod tests {
     fn patch_round_trip_supports_non_wanxiang_schemas() {
         let dir = temp_rime_dir("model-patch-cross-schema");
 
-        patch_model(&dir, &Schema::Ice).expect("patch ice model");
-        assert!(is_model_patched(&dir, &Schema::Ice));
+        patch_model(&dir, &Schema::Ice, Lang::Zh).expect("patch ice model");
+        assert!(is_model_patched(&dir, &Schema::Ice, Lang::Zh));
 
-        patch_model(&dir, &Schema::Frost).expect("patch frost model");
-        assert!(is_model_patched(&dir, &Schema::Frost));
+        patch_model(&dir, &Schema::Frost, Lang::Zh).expect("patch frost model");
+        assert!(is_model_patched(&dir, &Schema::Frost, Lang::Zh));
 
-        patch_model(&dir, &Schema::Mint).expect("patch mint model");
-        assert!(is_model_patched(&dir, &Schema::Mint));
+        patch_model(&dir, &Schema::Mint, Lang::Zh).expect("patch mint model");
+        assert!(is_model_patched(&dir, &Schema::Mint, Lang::Zh));
 
-        unpatch_model(&dir, &Schema::Ice).expect("unpatch ice model");
-        unpatch_model(&dir, &Schema::Frost).expect("unpatch frost model");
-        unpatch_model(&dir, &Schema::Mint).expect("unpatch mint model");
-        assert!(!is_model_patched(&dir, &Schema::Ice));
-        assert!(!is_model_patched(&dir, &Schema::Frost));
-        assert!(!is_model_patched(&dir, &Schema::Mint));
+        unpatch_model(&dir, &Schema::Ice, Lang::Zh).expect("unpatch ice model");
+        unpatch_model(&dir, &Schema::Frost, Lang::Zh).expect("unpatch frost model");
+        unpatch_model(&dir, &Schema::Mint, Lang::Zh).expect("unpatch mint model");
+        assert!(!is_model_patched(&dir, &Schema::Ice, Lang::Zh));
+        assert!(!is_model_patched(&dir, &Schema::Frost, Lang::Zh));
+        assert!(!is_model_patched(&dir, &Schema::Mint, Lang::Zh));
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -250,10 +283,10 @@ mod tests {
     fn ice_patch_matches_reference_integrator_shape() {
         let dir = temp_rime_dir("model-patch-ice-shape");
 
-        patch_model(&dir, &Schema::Ice).expect("patch ice model");
+        patch_model(&dir, &Schema::Ice, Lang::Zh).expect("patch ice model");
 
         let patch_file = patch_file_path(&dir, &Schema::Ice);
-        let doc = load_patch_doc(&patch_file).expect("load patch doc");
+        let doc = load_patch_doc(&patch_file, &L10n::new(Lang::Zh)).expect("load patch doc");
         let patch = match doc.get(PATCH_KEY) {
             Some(serde_yaml::Value::Mapping(mapping)) => mapping,
             other => panic!("unexpected patch mapping: {other:?}"),
@@ -283,10 +316,10 @@ mod tests {
     fn frost_patch_matches_ice_shape() {
         let dir = temp_rime_dir("model-patch-frost-shape");
 
-        patch_model(&dir, &Schema::Frost).expect("patch frost model");
+        patch_model(&dir, &Schema::Frost, Lang::Zh).expect("patch frost model");
 
         let patch_file = patch_file_path(&dir, &Schema::Frost);
-        let doc = load_patch_doc(&patch_file).expect("load patch doc");
+        let doc = load_patch_doc(&patch_file, &L10n::new(Lang::Zh)).expect("load patch doc");
         let patch = match doc.get(PATCH_KEY) {
             Some(serde_yaml::Value::Mapping(mapping)) => mapping,
             other => panic!("unexpected patch mapping: {other:?}"),
@@ -316,10 +349,10 @@ mod tests {
     fn mint_patch_matches_documented_shape() {
         let dir = temp_rime_dir("model-patch-mint-shape");
 
-        patch_model(&dir, &Schema::Mint).expect("patch mint model");
+        patch_model(&dir, &Schema::Mint, Lang::Zh).expect("patch mint model");
 
         let patch_file = patch_file_path(&dir, &Schema::Mint);
-        let doc = load_patch_doc(&patch_file).expect("load patch doc");
+        let doc = load_patch_doc(&patch_file, &L10n::new(Lang::Zh)).expect("load patch doc");
         let patch = match doc.get(PATCH_KEY) {
             Some(serde_yaml::Value::Mapping(mapping)) => mapping,
             other => panic!("unexpected patch mapping: {other:?}"),

@@ -16,7 +16,7 @@ use types::Schema;
 #[command(
     name = "snout",
     version,
-    about = "Rime 输入法初始化与更新工具 / Rime input method init and update tool"
+    about = env!("CARGO_PKG_DESCRIPTION")
 )]
 struct Cli {
     /// 首次初始化模式 / First-time setup mode
@@ -91,39 +91,46 @@ async fn main() -> anyhow::Result<()> {
         let rime_dir = manager.rime_dir.clone();
 
         if cli.update {
-            updater::update_all(&schema, &manager.config, cache_dir, rime_dir, |msg, pct| {
-                print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
-                std::io::Write::flush(&mut std::io::stdout()).ok();
-            })
+            updater::update_all(
+                &schema,
+                &manager.config,
+                cache_dir,
+                rime_dir,
+                types::CancelSignal::new(),
+                |event| {
+                    print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
+                    std::io::Write::flush(&mut std::io::stdout()).ok();
+                },
+            )
             .await?;
             println!();
         } else if cli.scheme {
             let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir)?;
             if schema.is_wanxiang() {
                 updater::wanxiang::WanxiangUpdater { base }
-                    .update_scheme(&schema, &manager.config, |msg, pct| {
-                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                    .update_scheme(&schema, &manager.config, None, |event| {
+                        print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                     })
                     .await?;
             } else if schema == Schema::Ice {
                 updater::ice::IceUpdater { base }
-                    .update_scheme(&manager.config, |msg, pct| {
-                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                    .update_scheme(&manager.config, None, |event| {
+                        print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                     })
                     .await?;
             } else if schema == Schema::Frost {
                 updater::frost::FrostUpdater { base }
-                    .update_scheme(&manager.config, |msg, pct| {
-                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                    .update_scheme(&manager.config, None, |event| {
+                        print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                     })
                     .await?;
             } else {
                 updater::mint::MintUpdater { base }
-                    .update_scheme(&manager.config, |msg, pct| {
-                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                    .update_scheme(&manager.config, None, |event| {
+                        print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                     })
                     .await?;
@@ -134,15 +141,15 @@ async fn main() -> anyhow::Result<()> {
                 let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir)?;
                 if schema.is_wanxiang() {
                     updater::wanxiang::WanxiangUpdater { base }
-                        .update_dict(&schema, &manager.config, |msg, pct| {
-                            print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                        .update_dict(&schema, &manager.config, None, |event| {
+                            print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
                             std::io::Write::flush(&mut std::io::stdout()).ok();
                         })
                         .await?;
                 } else {
                     updater::ice::IceUpdater { base }
-                        .update_dict(&manager.config, |msg, pct| {
-                            print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                        .update_dict(&manager.config, None, |event| {
+                            print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
                             std::io::Write::flush(&mut std::io::stdout()).ok();
                         })
                         .await?;
@@ -158,14 +165,18 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir.clone())?;
                 updater::wanxiang::WanxiangUpdater { base }
-                    .update_model(&manager.config, |msg, pct| {
-                        print!("\r  [{:3.0}%] {}", pct * 100.0, msg);
+                    .update_model(&manager.config, None, |event| {
+                        print!("\r  [{:3.0}%] {}", event.progress * 100.0, event.detail);
                         std::io::Write::flush(&mut std::io::stdout()).ok();
                     })
                     .await?;
 
                 if cli.patch_model {
-                    updater::model_patch::patch_model(&rime_dir, &schema)?;
+                    updater::model_patch::patch_model(
+                        &rime_dir,
+                        &schema,
+                        Lang::from_str(&manager.config.language),
+                    )?;
                 }
                 println!();
             }

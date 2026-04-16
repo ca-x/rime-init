@@ -1,5 +1,7 @@
 use super::base::{BaseUpdater, UpdateResult};
+use crate::i18n::{L10n, Lang};
 use crate::types::*;
+use crate::updater::{UpdateComponent, UpdateEvent, UpdatePhase};
 use anyhow::{Context, Result};
 
 /// 白霜方案更新器
@@ -9,26 +11,36 @@ pub struct FrostUpdater {
 
 impl FrostUpdater {
     /// 检查方案更新
-    pub async fn check_scheme_update(&self) -> Result<UpdateInfo> {
+    pub async fn check_scheme_update(&self, cancel: Option<&CancelSignal>) -> Result<UpdateInfo> {
+        let t = L10n::new(self.base.lang);
         let releases = self
             .base
             .client
-            .fetch_github_releases(FROST_OWNER, FROST_REPO, "")
+            .fetch_github_releases(FROST_OWNER, FROST_REPO, "", cancel)
             .await?;
 
-        BaseUpdater::find_update_info(&releases, "rime-frost-schemas.zip", None)
-            .context("未找到白霜方案文件: rime-frost-schemas.zip")
+        BaseUpdater::find_update_info(&releases, "rime-frost-schemas.zip", None).context(format!(
+            "{}: rime-frost-schemas.zip",
+            t.t("err.no_scheme_file")
+        ))
     }
 
     /// 更新方案
     pub async fn update_scheme(
         &self,
         config: &crate::types::Config,
-        mut progress: impl FnMut(&str, f64),
+        cancel: Option<&CancelSignal>,
+        mut progress: impl FnMut(UpdateEvent),
     ) -> Result<UpdateResult> {
-        progress("检查白霜方案更新...", 0.05);
+        let t = L10n::new(Lang::from_str(&config.language));
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Checking,
+            progress: 0.05,
+            detail: t.t("update.scheme.checking").into(),
+        });
 
-        let info = self.check_scheme_update().await?;
+        let info = self.check_scheme_update(cancel).await?;
         let record_path = self.base.cache_dir.join("scheme_record.json");
         let local = BaseUpdater::load_record(&record_path);
 
@@ -39,26 +51,51 @@ impl FrostUpdater {
             .unwrap_or(false);
 
         if !scheme_switched && !BaseUpdater::needs_update(local.as_ref(), &info) {
-            progress("方案已是最新", 1.0);
+            progress(UpdateEvent {
+                component: UpdateComponent::Scheme,
+                phase: UpdatePhase::Finished,
+                progress: 1.0,
+                detail: t.t("update.up_to_date").into(),
+            });
             return Ok(BaseUpdater::success_result(
-                "方案",
+                t.t("update.scheme"),
                 &info.tag,
                 &info.tag,
-                "已是最新版本",
+                t.t("update.up_to_date"),
             ));
         }
 
         if scheme_switched {
-            progress("检测到方案切换，重新下载...", 0.05);
+            progress(UpdateEvent {
+                component: UpdateComponent::Scheme,
+                phase: UpdatePhase::Checking,
+                progress: 0.05,
+                detail: t.t("update.scheme_switched").into(),
+            });
         }
 
         // 下载并解压
         self.base
-            .download_and_extract(&info, config, &self.base.rime_dir, &mut progress)
+            .download_and_extract(
+                &info,
+                config,
+                &self.base.rime_dir,
+                UpdateComponent::Scheme,
+                cancel,
+                &mut progress,
+            )
             .await?;
 
         // 保存记录
-        progress("保存记录...", 0.95);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Saving,
+            progress: 0.95,
+            detail: t.t("update.saving").into(),
+        });
         let record = UpdateRecord {
             name: "rime-frost-schemas.zip".into(),
             update_time: info.update_time.clone(),
@@ -74,13 +111,20 @@ impl FrostUpdater {
             let _ = std::fs::remove_dir_all(&build_dir);
         }
 
-        progress("白霜方案更新完成", 1.0);
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Finished,
+            progress: 1.0,
+            detail: t.t("update.scheme_done").into(),
+        });
         Ok(UpdateResult {
-            component: "方案".into(),
-            old_version: local.map(|r| r.tag).unwrap_or_else(|| "未安装".into()),
+            component: t.t("update.scheme").into(),
+            old_version: local
+                .map(|r| r.tag)
+                .unwrap_or_else(|| t.t("status.not_installed").into()),
             new_version: info.tag,
             success: true,
-            message: "更新成功".into(),
+            message: t.t("update.complete").into(),
         })
     }
 

@@ -1,3 +1,4 @@
+use crate::i18n::{L10n, Lang};
 use crate::types::*;
 use anyhow::{Context, Result};
 use reqwest::header::{HeaderMap, ACCEPT, AUTHORIZATION};
@@ -7,10 +8,31 @@ pub struct Client {
     http: reqwest::Client,
     github_token: String,
     use_mirror: bool,
+    lang: Lang,
 }
 
 impl Client {
+    async fn cancellable_sleep(
+        delay: std::time::Duration,
+        cancel: Option<&CancelSignal>,
+    ) -> Result<()> {
+        let start = std::time::Instant::now();
+        while start.elapsed() < delay {
+            if let Some(signal) = cancel {
+                signal.checkpoint()?;
+            }
+            let remaining = delay.saturating_sub(start.elapsed());
+            tokio::time::sleep(std::cmp::min(
+                remaining,
+                std::time::Duration::from_millis(100),
+            ))
+            .await;
+        }
+        Ok(())
+    }
+
     pub fn new(config: &Config) -> Result<Self> {
+        let t = L10n::new(Lang::from_str(&config.language));
         let mut builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
             .user_agent("snout/0.1");
@@ -21,8 +43,8 @@ impl Client {
                 "http" | "https" => Proxy::all(format!("http://{}", config.proxy_address))?,
                 "socks5" => Proxy::all(format!("socks5://{}", config.proxy_address))?,
                 _ => {
-                    eprintln!("⚠️ 未知代理类型: {}", config.proxy_type);
-                    return Err(anyhow::anyhow!("未知代理类型"));
+                    eprintln!("⚠️ {}: {}", t.t("api.proxy_unknown"), config.proxy_type);
+                    return Err(anyhow::anyhow!("{}", t.t("api.proxy_unknown")));
                 }
             };
             builder = builder.proxy(proxy);
@@ -32,18 +54,20 @@ impl Client {
             http: builder.build()?,
             github_token: config.github_token.clone(),
             use_mirror: config.use_mirror,
+            lang: Lang::from_str(&config.language),
         })
     }
 
     /// 无超时的 client (用于大文件下载)
     pub fn new_download_client(config: &Config) -> Result<Self> {
+        let t = L10n::new(Lang::from_str(&config.language));
         let mut builder = reqwest::Client::builder().user_agent("snout/0.1");
 
         if config.proxy_enabled {
             let proxy = match config.proxy_type.as_str() {
                 "http" | "https" => Proxy::all(format!("http://{}", config.proxy_address))?,
                 "socks5" => Proxy::all(format!("socks5://{}", config.proxy_address))?,
-                _ => return Err(anyhow::anyhow!("未知代理类型")),
+                _ => return Err(anyhow::anyhow!("{}", t.t("api.proxy_unknown"))),
             };
             builder = builder.proxy(proxy);
         }
@@ -52,6 +76,7 @@ impl Client {
             http: builder.build()?,
             github_token: config.github_token.clone(),
             use_mirror: config.use_mirror,
+            lang: Lang::from_str(&config.language),
         })
     }
 
@@ -87,7 +112,12 @@ impl Client {
         repo: &str,
         branch: &str,
         archive_name: &str,
+        cancel: Option<&CancelSignal>,
     ) -> Result<UpdateInfo> {
+        let t = L10n::new(self.lang);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
         let url = format!("{GITHUB_API}/repos/{owner}/{repo}/branches/{branch}");
 
         let resp = self
@@ -98,7 +128,7 @@ impl Client {
             .await?;
 
         if !resp.status().is_success() {
-            anyhow::bail!("GitHub Branch API 返回 {}", resp.status());
+            anyhow::bail!("{} {}", t.t("api.github_branch_status"), resp.status());
         }
 
         let branch_info: serde_json::Value = resp.json().await?;
@@ -106,7 +136,7 @@ impl Client {
             .get("commit")
             .and_then(|v| v.get("sha"))
             .and_then(|v| v.as_str())
-            .context("GitHub Branch API 缺少 commit.sha")?;
+            .with_context(|| t.t("api.github_branch_missing_sha").to_string())?;
 
         Ok(UpdateInfo {
             name: archive_name.into(),
@@ -125,7 +155,9 @@ impl Client {
         owner: &str,
         repo: &str,
         tag: &str,
+        cancel: Option<&CancelSignal>,
     ) -> Result<Vec<GitHubRelease>> {
+        let t = L10n::new(self.lang);
         let url = if tag.is_empty() {
             format!("{GITHUB_API}/repos/{owner}/{repo}/releases?per_page=30")
         } else {
@@ -134,9 +166,12 @@ impl Client {
 
         let mut last_err = None;
         for attempt in 0..3 {
+            if let Some(signal) = cancel {
+                signal.checkpoint()?;
+            }
             if attempt > 0 {
                 let delay = std::time::Duration::from_secs(1 << attempt);
-                tokio::time::sleep(delay).await;
+                Self::cancellable_sleep(delay, cancel).await?;
             }
 
             let resp = self
@@ -157,14 +192,18 @@ impl Client {
                     }
                 }
                 Ok(r) => {
-                    last_err = Some(anyhow::anyhow!("GitHub API 返回 {}", r.status()));
+                    last_err = Some(anyhow::anyhow!(
+                        "{} {}",
+                        t.t("api.github_status"),
+                        r.status()
+                    ));
                 }
                 Err(e) => {
-                    last_err = Some(anyhow::anyhow!("GitHub API 请求失败: {e}"));
+                    last_err = Some(anyhow::anyhow!("{}: {e}", t.t("api.github_request_failed")));
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("GitHub API 请求失败")))
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("{}", t.t("api.github_request_failed"))))
     }
 
     // ── CNB 镜像 ──
@@ -175,14 +214,19 @@ impl Client {
         owner: &str,
         repo: &str,
         tag: &str,
+        cancel: Option<&CancelSignal>,
     ) -> Result<GitHubRelease> {
+        let t = L10n::new(self.lang);
         let url = format!("{CNB_BASE}/{owner}/{repo}/-/releases/tags/{tag}");
 
         let mut last_err = None;
         for attempt in 0..3 {
+            if let Some(signal) = cancel {
+                signal.checkpoint()?;
+            }
             if attempt > 0 {
                 let delay = std::time::Duration::from_secs(1 << attempt);
-                tokio::time::sleep(delay).await;
+                Self::cancellable_sleep(delay, cancel).await?;
             }
 
             let resp = self.http.get(&url).headers(self.cnb_headers()).send().await;
@@ -193,19 +237,28 @@ impl Client {
                     return Ok(release);
                 }
                 Ok(r) => {
-                    last_err = Some(anyhow::anyhow!("CNB API 返回 {}", r.status()));
+                    last_err = Some(anyhow::anyhow!("{} {}", t.t("api.cnb_status"), r.status()));
                 }
                 Err(e) => {
-                    last_err = Some(anyhow::anyhow!("CNB API 请求失败: {e}"));
+                    last_err = Some(anyhow::anyhow!("{}: {e}", t.t("api.cnb_request_failed")));
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("CNB API 请求失败")))
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("{}", t.t("api.cnb_request_failed"))))
     }
 
     /// 获取 CNB 最新 tag
     #[allow(dead_code)]
-    pub async fn fetch_cnb_latest_tag(&self, owner: &str, repo: &str) -> Result<String> {
+    pub async fn fetch_cnb_latest_tag(
+        &self,
+        owner: &str,
+        repo: &str,
+        cancel: Option<&CancelSignal>,
+    ) -> Result<String> {
+        let t = L10n::new(self.lang);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
         let url = format!("{CNB_BASE}/{owner}/{repo}/-/releases?page=1&per_page=1");
         let resp = self
             .http
@@ -219,7 +272,7 @@ impl Client {
             .into_iter()
             .next()
             .map(|r| r.tag_name)
-            .context("CNB 无 release")
+            .with_context(|| t.t("api.cnb_no_release").to_string())
     }
 
     // ── 通用下载 ──
@@ -229,34 +282,47 @@ impl Client {
         &self,
         url: &str,
         dest: &std::path::Path,
+        cancel: Option<&CancelSignal>,
         mut progress: impl FnMut(u64, Option<u64>),
     ) -> Result<()> {
         use futures_util::StreamExt;
         use tokio::io::AsyncWriteExt;
 
+        let t = L10n::new(self.lang);
         let mut last_err = None;
         for attempt in 0..3 {
+            if let Some(signal) = cancel {
+                signal.checkpoint()?;
+            }
             if attempt > 0 {
                 let delay = std::time::Duration::from_secs(1 << attempt);
                 eprintln!(
-                    "⚠️ 下载失败，{}s 后重试 ({}/3)...",
+                    "⚠️ {}: {}s ({}/3)...",
+                    t.t("api.download_retry"),
                     delay.as_secs(),
                     attempt + 1
                 );
-                tokio::time::sleep(delay).await;
+                Self::cancellable_sleep(delay, cancel).await?;
             }
 
             // 每次重试重新创建文件 (截断)
             let resp = match self.http.get(url).send().await {
                 Ok(r) => r,
                 Err(e) => {
-                    last_err = Some(anyhow::anyhow!("下载请求失败: {e}"));
+                    last_err = Some(anyhow::anyhow!(
+                        "{}: {e}",
+                        t.t("api.download_request_failed")
+                    ));
                     continue;
                 }
             };
 
             if !resp.status().is_success() {
-                last_err = Some(anyhow::anyhow!("下载失败: HTTP {}", resp.status()));
+                last_err = Some(anyhow::anyhow!(
+                    "{} {}",
+                    t.t("api.download_http_failed"),
+                    resp.status()
+                ));
                 continue;
             }
 
@@ -267,6 +333,9 @@ impl Client {
             let mut stream_err = None;
 
             while let Some(chunk) = stream.next().await {
+                if let Some(signal) = cancel {
+                    signal.checkpoint()?;
+                }
                 match chunk {
                     Ok(c) => {
                         if let Err(e) = file.write_all(&c).await {
@@ -284,7 +353,7 @@ impl Client {
             }
 
             if let Some(e) = stream_err {
-                last_err = Some(anyhow::anyhow!("下载中断: {e}"));
+                last_err = Some(anyhow::anyhow!("{}: {e}", t.t("api.download_interrupted")));
                 continue;
             }
 
@@ -292,10 +361,109 @@ impl Client {
             return Ok(());
         }
 
-        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("下载失败")))
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("{}", t.t("err.download_failed"))))
     }
 
     pub fn use_mirror(&self) -> bool {
         self.use_mirror
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use reqwest::header::HeaderValue;
+
+    fn base_config() -> Config {
+        Config {
+            github_token: String::new(),
+            proxy_enabled: false,
+            proxy_type: "socks5".into(),
+            proxy_address: "127.0.0.1:1080".into(),
+            language: "en".into(),
+            ..Config::default()
+        }
+    }
+
+    #[test]
+    fn client_new_accepts_supported_proxy_types() {
+        for proxy_type in ["http", "https", "socks5"] {
+            let mut config = base_config();
+            config.proxy_enabled = true;
+            config.proxy_type = proxy_type.into();
+            assert!(Client::new(&config).is_ok(), "proxy_type={proxy_type}");
+        }
+    }
+
+    #[test]
+    fn client_new_rejects_unknown_proxy_type() {
+        let mut config = base_config();
+        config.proxy_enabled = true;
+        config.proxy_type = "nope".into();
+        assert!(Client::new(&config).is_err());
+    }
+
+    #[test]
+    fn download_client_accepts_supported_proxy_types() {
+        for proxy_type in ["http", "https", "socks5"] {
+            let mut config = base_config();
+            config.proxy_enabled = true;
+            config.proxy_type = proxy_type.into();
+            assert!(
+                Client::new_download_client(&config).is_ok(),
+                "proxy_type={proxy_type}"
+            );
+        }
+    }
+
+    #[test]
+    fn download_client_rejects_unknown_proxy_type() {
+        let mut config = base_config();
+        config.proxy_enabled = true;
+        config.proxy_type = "bad".into();
+        assert!(Client::new_download_client(&config).is_err());
+    }
+
+    #[test]
+    fn github_headers_omit_auth_when_token_missing() {
+        let client = Client::new(&base_config()).expect("client");
+        let headers = client.github_headers();
+        assert!(!headers.contains_key(AUTHORIZATION));
+    }
+
+    #[test]
+    fn github_headers_include_bearer_token() {
+        let mut config = base_config();
+        config.github_token = "secret".into();
+        let client = Client::new(&config).expect("client");
+        let headers = client.github_headers();
+        assert_eq!(
+            headers.get(AUTHORIZATION).unwrap(),
+            &"Bearer secret".parse::<HeaderValue>().unwrap()
+        );
+    }
+
+    #[test]
+    fn cnb_headers_always_include_accept_header() {
+        let client = Client::new(&base_config()).expect("client");
+        let headers = client.cnb_headers();
+        assert_eq!(
+            headers.get(ACCEPT).unwrap(),
+            &"application/vnd.cnb.web+json"
+                .parse::<HeaderValue>()
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn cnb_headers_include_optional_bearer_token() {
+        let mut config = base_config();
+        config.github_token = "token".into();
+        let client = Client::new(&config).expect("client");
+        let headers = client.cnb_headers();
+        assert_eq!(
+            headers.get(AUTHORIZATION).unwrap(),
+            &"Bearer token".parse::<HeaderValue>().unwrap()
+        );
     }
 }

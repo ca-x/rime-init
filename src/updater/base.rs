@@ -1,10 +1,13 @@
 use crate::api::Client;
 use crate::fileutil;
+use crate::i18n::{L10n, Lang};
 use crate::types::*;
+use crate::updater::{UpdateComponent, UpdateEvent, UpdatePhase};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 /// 更新结果
+#[derive(Debug)]
 pub struct UpdateResult {
     pub component: String,
     #[allow(dead_code)]
@@ -20,6 +23,7 @@ pub struct BaseUpdater {
     pub client: Client,
     pub cache_dir: PathBuf,
     pub rime_dir: PathBuf,
+    pub lang: Lang,
 }
 
 impl BaseUpdater {
@@ -28,6 +32,7 @@ impl BaseUpdater {
             client: Client::new(config)?,
             cache_dir,
             rime_dir,
+            lang: Lang::from_str(&config.language),
         })
     }
 
@@ -103,34 +108,68 @@ impl BaseUpdater {
         info: &UpdateInfo,
         config: &Config,
         extract_dest: &Path,
-        progress: &mut impl FnMut(&str, f64),
+        component: UpdateComponent,
+        cancel: Option<&CancelSignal>,
+        progress: &mut impl FnMut(UpdateEvent),
     ) -> Result<()> {
+        let t = L10n::new(self.lang);
         let zip_path = self.cache_dir.join(&info.name);
         let mut already_verified = false;
 
         // 缓存复用
         if zip_path.exists() && !info.sha256.is_empty() {
-            progress("校验本地缓存...", 0.10);
+            if let Some(signal) = cancel {
+                signal.checkpoint()?;
+            }
+            progress(UpdateEvent {
+                component,
+                phase: UpdatePhase::Checking,
+                progress: 0.10,
+                detail: t.t("update.cache.verify").into(),
+            });
             if self.hash_matches(&info.sha256, &zip_path) {
-                progress("缓存有效，跳过下载", 0.70);
+                progress(UpdateEvent {
+                    component,
+                    phase: UpdatePhase::Checking,
+                    progress: 0.70,
+                    detail: t.t("update.cache.valid").into(),
+                });
                 already_verified = true;
             } else {
-                self.do_download(info, config, &zip_path, progress).await?;
+                self.do_download(info, config, &zip_path, component, cancel, progress)
+                    .await?;
             }
         } else {
-            self.do_download(info, config, &zip_path, progress).await?;
+            self.do_download(info, config, &zip_path, component, cancel, progress)
+                .await?;
         }
 
         // SHA256 校验 (仅当未在缓存阶段验证过)
         if !already_verified && !info.sha256.is_empty() {
-            progress("校验文件...", 0.80);
+            if let Some(signal) = cancel {
+                signal.checkpoint()?;
+            }
+            progress(UpdateEvent {
+                component,
+                phase: UpdatePhase::Verifying,
+                progress: 0.80,
+                detail: t.t("update.verifying").into(),
+            });
             if !fileutil::hash::verify_sha256(&zip_path, &info.sha256) {
-                anyhow::bail!("SHA256 校验失败");
+                anyhow::bail!("{}", t.t("err.sha256_mismatch"));
             }
         }
 
         // 解压
-        progress("解压中...", 0.85);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
+        progress(UpdateEvent {
+            component,
+            phase: UpdatePhase::Extracting,
+            progress: 0.85,
+            detail: t.t("update.extracting").into(),
+        });
         std::fs::create_dir_all(extract_dest)?;
         fileutil::extract::extract_zip(&zip_path, extract_dest)?;
 
@@ -143,18 +182,32 @@ impl BaseUpdater {
         info: &UpdateInfo,
         config: &Config,
         zip_path: &Path,
-        progress: &mut impl FnMut(&str, f64),
+        component: UpdateComponent,
+        cancel: Option<&CancelSignal>,
+        progress: &mut impl FnMut(UpdateEvent),
     ) -> Result<()> {
-        progress("下载中...", 0.15);
+        let t = L10n::new(self.lang);
+        progress(UpdateEvent {
+            component,
+            phase: UpdatePhase::Downloading,
+            progress: 0.15,
+            detail: t.t("update.downloading").into(),
+        });
         let dl_client = Client::new_download_client(config)?;
         dl_client
-            .download_file(&info.url, zip_path, |downloaded, total| {
+            .download_file(&info.url, zip_path, cancel, |downloaded, total| {
                 if let Some(t) = total {
                     let pct = 0.15 + (downloaded as f64 / t as f64) * 0.55;
-                    progress(
-                        &format!("下载中... {:.0}%", (downloaded as f64 / t as f64) * 100.0),
-                        pct,
-                    );
+                    progress(UpdateEvent {
+                        component,
+                        phase: UpdatePhase::Downloading,
+                        progress: pct,
+                        detail: format!(
+                            "{} {:.0}%",
+                            L10n::new(self.lang).t("update.download_progress"),
+                            (downloaded as f64 / t as f64) * 100.0
+                        ),
+                    });
                 }
             })
             .await

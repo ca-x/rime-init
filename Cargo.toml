@@ -2,7 +2,7 @@
 name = "snout"
 version = "0.1.0"
 edition = "2021"
-description = "Rime 输入法初始化与更新工具 - 支持万象/雾凇/白霜方案"
+description = "Rime input method init and update tool with Wanxiang, Ice, Frost, and Mint support"
 license = "MIT"
 
 [dependencies]

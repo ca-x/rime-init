@@ -1,3 +1,4 @@
+use crate::i18n::Lang;
 use crate::skin::builtin::{builtin_skins, find_skin};
 use anyhow::Result;
 use serde_yaml;
@@ -90,7 +91,7 @@ pub fn set_default_skin(path: &Path, theme_key: &str) -> Result<()> {
 /// 列出所有可用的内置主题
 #[allow(dead_code)]
 pub fn list_available_skins() -> Vec<(String, String)> {
-    builtin_skins()
+    builtin_skins(Lang::Zh)
         .into_iter()
         .map(|s| (s.key, s.display_name))
         .collect()

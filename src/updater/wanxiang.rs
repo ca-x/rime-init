@@ -1,5 +1,7 @@
 use super::base::{BaseUpdater, UpdateResult};
+use crate::i18n::{L10n, Lang};
 use crate::types::*;
+use crate::updater::{UpdateComponent, UpdateEvent, UpdatePhase};
 use anyhow::{Context, Result};
 
 /// 万象方案更新器
@@ -9,7 +11,12 @@ pub struct WanxiangUpdater {
 
 impl WanxiangUpdater {
     /// 检查方案更新
-    pub async fn check_scheme_update(&self, schema: &Schema) -> Result<UpdateInfo> {
+    pub async fn check_scheme_update(
+        &self,
+        schema: &Schema,
+        cancel: Option<&CancelSignal>,
+    ) -> Result<UpdateInfo> {
+        let t = L10n::new(self.base.lang);
         let releases = if self.base.client.use_mirror() {
             let release = self
                 .base
@@ -18,18 +25,22 @@ impl WanxiangUpdater {
                     WX_OWNER,
                     WX_CNB_REPO,
                     &format!("latest/{}", schema.scheme_zip()),
+                    cancel,
                 )
                 .await?;
             vec![release]
         } else {
             self.base
                 .client
-                .fetch_github_releases(schema.owner(), schema.repo(), "")
+                .fetch_github_releases(schema.owner(), schema.repo(), "", cancel)
                 .await?
         };
 
-        BaseUpdater::find_update_info(&releases, schema.scheme_zip(), None)
-            .context(format!("未找到方案文件: {}", schema.scheme_zip()))
+        BaseUpdater::find_update_info(&releases, schema.scheme_zip(), None).context(format!(
+            "{}: {}",
+            t.t("err.no_scheme_file"),
+            schema.scheme_zip()
+        ))
     }
 
     /// 更新方案
@@ -37,11 +48,18 @@ impl WanxiangUpdater {
         &self,
         schema: &Schema,
         config: &Config,
-        mut progress: impl FnMut(&str, f64),
+        cancel: Option<&CancelSignal>,
+        mut progress: impl FnMut(UpdateEvent),
     ) -> Result<UpdateResult> {
-        progress("检查万象方案更新...", 0.05);
+        let t = L10n::new(Lang::from_str(&config.language));
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Checking,
+            progress: 0.05,
+            detail: t.t("update.scheme.checking").into(),
+        });
 
-        let info = self.check_scheme_update(schema).await?;
+        let info = self.check_scheme_update(schema, cancel).await?;
         let record_path = self.base.cache_dir.join("scheme_record.json");
         let local = BaseUpdater::load_record(&record_path);
 
@@ -58,24 +76,46 @@ impl WanxiangUpdater {
             && !scheme_switched
             && !BaseUpdater::needs_update(local.as_ref(), &info)
         {
-            progress("方案已是最新", 1.0);
+            progress(UpdateEvent {
+                component: UpdateComponent::Scheme,
+                phase: UpdatePhase::Finished,
+                progress: 1.0,
+                detail: t.t("update.up_to_date").into(),
+            });
             return Ok(BaseUpdater::success_result(
-                "方案",
+                t.t("update.scheme"),
                 &info.tag,
                 &info.tag,
-                "已是最新版本",
+                t.t("update.up_to_date"),
             ));
         }
 
         if key_file_missing {
-            progress("关键文件缺失，强制更新...", 0.05);
+            progress(UpdateEvent {
+                component: UpdateComponent::Scheme,
+                phase: UpdatePhase::Checking,
+                progress: 0.05,
+                detail: t.t("update.key_file_missing").into(),
+            });
         } else if scheme_switched {
-            progress("检测到方案切换，重新下载...", 0.05);
+            progress(UpdateEvent {
+                component: UpdateComponent::Scheme,
+                phase: UpdatePhase::Checking,
+                progress: 0.05,
+                detail: t.t("update.scheme_switched").into(),
+            });
         }
 
         // 下载
         self.base
-            .download_and_extract(&info, config, &self.base.rime_dir, &mut progress)
+            .download_and_extract(
+                &info,
+                config,
+                &self.base.rime_dir,
+                UpdateComponent::Scheme,
+                cancel,
+                &mut progress,
+            )
             .await?;
 
         // 处理 CNB 嵌套目录
@@ -84,14 +124,22 @@ impl WanxiangUpdater {
             if let Err(e) =
                 crate::fileutil::extract::handle_nested_dir(&self.base.rime_dir, &info.name)
             {
-                let msg = format!("嵌套目录处理失败: {e}");
+                let msg = format!("{}: {e}", t.t("update.nested_dir_failed"));
                 eprintln!("⚠️ {msg}");
                 warnings.push(msg);
             }
         }
 
         // 保存记录
-        progress("保存记录...", 0.95);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Saving,
+            progress: 0.95,
+            detail: t.t("update.saving").into(),
+        });
         let record = UpdateRecord {
             name: info.name.clone(),
             update_time: info.update_time.clone(),
@@ -107,15 +155,22 @@ impl WanxiangUpdater {
             let _ = std::fs::remove_dir_all(&build_dir);
         }
 
-        progress("方案更新完成", 1.0);
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Finished,
+            progress: 1.0,
+            detail: t.t("update.scheme_done").into(),
+        });
         let msg = if warnings.is_empty() {
-            "更新成功".into()
+            t.t("update.complete").into()
         } else {
-            format!("更新成功 (警告: {})", warnings.join("; "))
+            format!("{} ({})", t.t("update.complete"), warnings.join("; "))
         };
         Ok(UpdateResult {
-            component: "方案".into(),
-            old_version: local.map(|r| r.tag).unwrap_or_else(|| "未安装".into()),
+            component: t.t("update.scheme").into(),
+            old_version: local
+                .map(|r| r.tag)
+                .unwrap_or_else(|| t.t("status.not_installed").into()),
             new_version: info.tag,
             success: true,
             message: msg,
@@ -123,8 +178,15 @@ impl WanxiangUpdater {
     }
 
     /// 检查词库更新
-    pub async fn check_dict_update(&self, schema: &Schema) -> Result<UpdateInfo> {
-        let dict_zip = schema.dict_zip().context("此方案无独立词库")?;
+    pub async fn check_dict_update(
+        &self,
+        schema: &Schema,
+        cancel: Option<&CancelSignal>,
+    ) -> Result<UpdateInfo> {
+        let t = L10n::new(self.base.lang);
+        let dict_zip = schema
+            .dict_zip()
+            .with_context(|| t.t("update.no_dict").to_string())?;
 
         if self.base.client.use_mirror() {
             let tag = if dict_zip.starts_with("base") {
@@ -135,18 +197,18 @@ impl WanxiangUpdater {
             let release = self
                 .base
                 .client
-                .fetch_cnb_release(WX_OWNER, WX_CNB_REPO, tag)
+                .fetch_cnb_release(WX_OWNER, WX_CNB_REPO, tag, cancel)
                 .await?;
             BaseUpdater::find_update_info(&[release], dict_zip, None)
         } else {
             let releases = self
                 .base
                 .client
-                .fetch_github_releases(schema.owner(), schema.repo(), schema.dict_tag())
+                .fetch_github_releases(schema.owner(), schema.repo(), schema.dict_tag(), cancel)
                 .await?;
             BaseUpdater::find_update_info(&releases, dict_zip, None)
         }
-        .context(format!("未找到词库: {dict_zip}"))
+        .context(format!("{}: {dict_zip}", t.t("err.no_dict_file")))
     }
 
     /// 更新词库
@@ -154,41 +216,68 @@ impl WanxiangUpdater {
         &self,
         schema: &Schema,
         config: &Config,
-        mut progress: impl FnMut(&str, f64),
+        cancel: Option<&CancelSignal>,
+        mut progress: impl FnMut(UpdateEvent),
     ) -> Result<UpdateResult> {
-        progress("检查万象词库更新...", 0.05);
+        let t = L10n::new(Lang::from_str(&config.language));
+        progress(UpdateEvent {
+            component: UpdateComponent::Dict,
+            phase: UpdatePhase::Checking,
+            progress: 0.05,
+            detail: t.t("update.dict.checking").into(),
+        });
 
-        let info = self.check_dict_update(schema).await?;
+        let info = self.check_dict_update(schema, cancel).await?;
         let record_path = self.base.cache_dir.join("dict_record.json");
         let local = BaseUpdater::load_record(&record_path);
 
         if !BaseUpdater::needs_update(local.as_ref(), &info) {
-            progress("词库已是最新", 1.0);
+            progress(UpdateEvent {
+                component: UpdateComponent::Dict,
+                phase: UpdatePhase::Finished,
+                progress: 1.0,
+                detail: t.t("update.up_to_date").into(),
+            });
             return Ok(BaseUpdater::success_result(
-                "词库",
+                t.t("update.dict"),
                 &info.tag,
                 &info.tag,
-                "已是最新版本",
+                t.t("update.up_to_date"),
             ));
         }
 
         // 下载
         let dict_dir = self.base.rime_dir.join("dicts");
         self.base
-            .download_and_extract(&info, config, &dict_dir, &mut progress)
+            .download_and_extract(
+                &info,
+                config,
+                &dict_dir,
+                UpdateComponent::Dict,
+                cancel,
+                &mut progress,
+            )
             .await?;
 
         let mut warnings = Vec::new();
         if self.base.client.use_mirror() {
             if let Err(e) = crate::fileutil::extract::handle_nested_dir(&dict_dir, &info.name) {
-                let msg = format!("嵌套目录处理失败: {e}");
+                let msg = format!("{}: {e}", t.t("update.nested_dir_failed"));
                 eprintln!("⚠️ {msg}");
                 warnings.push(msg);
             }
         }
 
         // 保存记录
-        progress("保存记录...", 0.95);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
+        progress(UpdateEvent {
+            component: UpdateComponent::Dict,
+            phase: UpdatePhase::Saving,
+            progress: 0.95,
+            detail: t.t("update.saving").into(),
+        });
         let record = UpdateRecord {
             name: info.name.clone(),
             update_time: info.update_time.clone(),
@@ -198,15 +287,22 @@ impl WanxiangUpdater {
         };
         BaseUpdater::save_record(&record_path, &record)?;
 
-        progress("词库更新完成", 1.0);
+        progress(UpdateEvent {
+            component: UpdateComponent::Dict,
+            phase: UpdatePhase::Finished,
+            progress: 1.0,
+            detail: t.t("update.dict_done").into(),
+        });
         let msg = if warnings.is_empty() {
-            "更新成功".into()
+            t.t("update.complete").into()
         } else {
-            format!("更新成功 (警告: {})", warnings.join("; "))
+            format!("{} ({})", t.t("update.complete"), warnings.join("; "))
         };
         Ok(UpdateResult {
-            component: "词库".into(),
-            old_version: local.map(|r| r.tag).unwrap_or_else(|| "未安装".into()),
+            component: t.t("update.dict").into(),
+            old_version: local
+                .map(|r| r.tag)
+                .unwrap_or_else(|| t.t("status.not_installed").into()),
             new_version: info.tag,
             success: true,
             message: msg,
@@ -214,26 +310,34 @@ impl WanxiangUpdater {
     }
 
     /// 检查模型更新
-    pub async fn check_model_update(&self) -> Result<UpdateInfo> {
+    pub async fn check_model_update(&self, cancel: Option<&CancelSignal>) -> Result<UpdateInfo> {
+        let t = L10n::new(self.base.lang);
         let releases = self
             .base
             .client
-            .fetch_github_releases(WX_OWNER, MODEL_REPO, MODEL_TAG)
+            .fetch_github_releases(WX_OWNER, MODEL_REPO, MODEL_TAG, cancel)
             .await?;
 
         BaseUpdater::find_update_info(&releases, MODEL_FILE, None)
-            .context(format!("未找到模型: {MODEL_FILE}"))
+            .context(format!("{}: {MODEL_FILE}", t.t("err.no_model_file")))
     }
 
     /// 更新模型
     pub async fn update_model(
         &self,
         config: &Config,
-        mut progress: impl FnMut(&str, f64),
+        cancel: Option<&CancelSignal>,
+        mut progress: impl FnMut(UpdateEvent),
     ) -> Result<UpdateResult> {
-        progress("检查万象模型更新...", 0.05);
+        let t = L10n::new(Lang::from_str(&config.language));
+        progress(UpdateEvent {
+            component: UpdateComponent::Model,
+            phase: UpdatePhase::Checking,
+            progress: 0.05,
+            detail: t.t("update.model.checking").into(),
+        });
 
-        let info = self.check_model_update().await?;
+        let info = self.check_model_update(cancel).await?;
         let record_path = self.base.cache_dir.join("model_record.json");
         let local = BaseUpdater::load_record(&record_path);
 
@@ -246,42 +350,75 @@ impl WanxiangUpdater {
                     && !info.sha256.is_empty()
                     && self.base.hash_matches(&info.sha256, &target)
                 {
-                    progress("模型已是最新", 1.0);
+                    progress(UpdateEvent {
+                        component: UpdateComponent::Model,
+                        phase: UpdatePhase::Finished,
+                        progress: 1.0,
+                        detail: t.t("update.up_to_date").into(),
+                    });
                     return Ok(UpdateResult {
-                        component: "模型".into(),
+                        component: t.t("update.model").into(),
                         old_version: rec.tag.clone(),
                         new_version: info.tag.clone(),
                         success: true,
-                        message: "已是最新版本".into(),
+                        message: t.t("update.up_to_date").into(),
                     });
                 }
             }
         }
 
         // 下载
-        progress("下载模型...", 0.15);
+        progress(UpdateEvent {
+            component: UpdateComponent::Model,
+            phase: UpdatePhase::Downloading,
+            progress: 0.15,
+            detail: t.t("update.download_model").into(),
+        });
         let dl_client = crate::api::Client::new_download_client(config)?;
         dl_client
-            .download_file(&info.url, &target, |dl, total| {
+            .download_file(&info.url, &target, cancel, |dl, total| {
                 if let Some(t) = total {
                     let pct = 0.15 + (dl as f64 / t as f64) * 0.75;
-                    progress(
-                        &format!("下载中... {:.0}%", (dl as f64 / t as f64) * 100.0),
-                        pct,
-                    );
+                    progress(UpdateEvent {
+                        component: UpdateComponent::Model,
+                        phase: UpdatePhase::Downloading,
+                        progress: pct,
+                        detail: format!(
+                            "{} {:.0}%",
+                            L10n::new(Lang::from_str(&config.language))
+                                .t("update.download_progress"),
+                            (dl as f64 / t as f64) * 100.0
+                        ),
+                    });
                 }
             })
             .await?;
 
         if !info.sha256.is_empty() {
-            progress("校验模型...", 0.92);
+            if let Some(signal) = cancel {
+                signal.checkpoint()?;
+            }
+            progress(UpdateEvent {
+                component: UpdateComponent::Model,
+                phase: UpdatePhase::Verifying,
+                progress: 0.92,
+                detail: t.t("update.verifying").into(),
+            });
             if !crate::fileutil::hash::verify_sha256(&target, &info.sha256) {
-                anyhow::bail!("SHA256 校验失败");
+                anyhow::bail!("{}", t.t("err.sha256_mismatch"));
             }
         }
 
         // 保存记录
-        progress("保存记录...", 0.95);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
+        progress(UpdateEvent {
+            component: UpdateComponent::Model,
+            phase: UpdatePhase::Saving,
+            progress: 0.95,
+            detail: t.t("update.saving").into(),
+        });
         let record = UpdateRecord {
             name: MODEL_FILE.into(),
             update_time: info.update_time.clone(),
@@ -291,13 +428,20 @@ impl WanxiangUpdater {
         };
         BaseUpdater::save_record(&record_path, &record)?;
 
-        progress("模型更新完成", 1.0);
+        progress(UpdateEvent {
+            component: UpdateComponent::Model,
+            phase: UpdatePhase::Finished,
+            progress: 1.0,
+            detail: t.t("update.model_done").into(),
+        });
         Ok(UpdateResult {
-            component: "模型".into(),
-            old_version: local.map(|r| r.tag).unwrap_or_else(|| "未安装".into()),
+            component: t.t("update.model").into(),
+            old_version: local
+                .map(|r| r.tag)
+                .unwrap_or_else(|| t.t("status.not_installed").into()),
             new_version: info.tag,
             success: true,
-            message: "更新成功".into(),
+            message: t.t("update.complete").into(),
         })
     }
 }

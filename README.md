@@ -128,7 +128,7 @@ snout --lang en --update
 - **白霜**：写入 `rime_frost.custom.yaml`
 - **薄荷**：写入 `rime_mint.custom.yaml`
 
-其中雾凇 / 白霜 / 薄荷使用 schema 级 `patch:` 覆写方式挂接模型参数；皮肤 patch 仍只写到输入法应用配置文件（`weasel.custom.yaml` / `squirrel.custom.yaml`）。
+模型 patch 采用当前上游 schema 的 `grammar/language` 键写入模型名；雾凇 / 白霜 / 薄荷还会一并写入 `translator/contextual_suggestions`、`translator/max_homophones`、`translator/max_homographs` 等配套参数。皮肤 patch 仍只写到输入法应用配置文件（`weasel.custom.yaml` / `squirrel.custom.yaml`）。
 
 ### 薄荷方案说明
 
@@ -192,7 +192,8 @@ snout --lang en --update
   "exclude_files": [".DS_Store", ".git"],
   "auto_update": false,
   "language": "zh",
-  "fcitx_compat": false,
+  "engine_sync_enabled": false,
+  "engine_sync_use_link": true,
   "model_patch_enabled": false,
   "skin_patch_key": ""
 }
@@ -332,7 +333,8 @@ write scheme-specific custom patch files for:
 - `rime_mint.custom.yaml`
 
 Ice, Frost, and Mint use schema-level `patch:` overrides for grammar and
-translator parameters. Skin patching remains limited to application-specific
+translator parameters, and Wanxiang also uses `grammar/language` to match the
+current upstream schema. Skin patching remains limited to application-specific
 config files such as `weasel.custom.yaml` and `squirrel.custom.yaml`.
 
 ## Mint Scheme Notes

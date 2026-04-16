@@ -1,6 +1,11 @@
-use crate::i18n::Lang;
+use crate::i18n::{L10n, Lang};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 // ── GitHub/CNB 常量 ──
 pub const GITHUB_API: &str = "https://api.github.com";
@@ -69,45 +74,31 @@ impl Schema {
         ]
     }
 
-    /// 显示名称
-    pub fn display_name(&self) -> &'static str {
+    pub fn i18n_key(&self) -> &'static str {
         match self {
-            Schema::WanxiangBase => "万象拼音 (标准版)",
-            Schema::WanxiangMoqi => "万象拼音 Pro (墨奇辅助)",
-            Schema::WanxiangFlypy => "万象拼音 Pro (小鹤辅助)",
-            Schema::WanxiangZrm => "万象拼音 Pro (自然码辅助)",
-            Schema::WanxiangTiger => "万象拼音 Pro (虎码辅助)",
-            Schema::WanxiangWubi => "万象拼音 Pro (五笔辅助)",
-            Schema::WanxiangHanxin => "万象拼音 Pro (汉心辅助)",
-            Schema::WanxiangShouyou => "万象拼音 Pro (首右辅助)",
-            Schema::WanxiangShyplus => "万象拼音 Pro (首右+辅助)",
-            Schema::WanxiangWx => "万象拼音 Pro (万象辅助)",
-            Schema::Ice => "雾凇拼音",
-            Schema::Frost => "白霜拼音",
-            Schema::Mint => "薄荷输入法",
+            Schema::WanxiangBase => "schema.wanxiang_base",
+            Schema::WanxiangMoqi => "schema.wanxiang_moqi",
+            Schema::WanxiangFlypy => "schema.wanxiang_flypy",
+            Schema::WanxiangZrm => "schema.wanxiang_zrm",
+            Schema::WanxiangTiger => "schema.wanxiang_tiger",
+            Schema::WanxiangWubi => "schema.wanxiang_wubi",
+            Schema::WanxiangHanxin => "schema.wanxiang_hanxin",
+            Schema::WanxiangShouyou => "schema.wanxiang_shouyou",
+            Schema::WanxiangShyplus => "schema.wanxiang_shyplus",
+            Schema::WanxiangWx => "schema.wanxiang_wx",
+            Schema::Ice => "schema.ice",
+            Schema::Frost => "schema.frost",
+            Schema::Mint => "schema.mint",
         }
     }
 
+    pub fn display_name(&self) -> String {
+        self.display_name_lang(Lang::Zh)
+    }
+
     /// 多语言显示名称
-    pub fn display_name_lang(&self, lang: Lang) -> &'static str {
-        match lang {
-            Lang::Zh => self.display_name(),
-            Lang::En => match self {
-                Schema::WanxiangBase => "Wanxiang (Base)",
-                Schema::WanxiangMoqi => "Wanxiang Pro (Moqi)",
-                Schema::WanxiangFlypy => "Wanxiang Pro (Flypy)",
-                Schema::WanxiangZrm => "Wanxiang Pro (Ziranma)",
-                Schema::WanxiangTiger => "Wanxiang Pro (Tiger Code)",
-                Schema::WanxiangWubi => "Wanxiang Pro (Wubi)",
-                Schema::WanxiangHanxin => "Wanxiang Pro (Hanxin)",
-                Schema::WanxiangShouyou => "Wanxiang Pro (Shouyou)",
-                Schema::WanxiangShyplus => "Wanxiang Pro (Shouyou+)",
-                Schema::WanxiangWx => "Wanxiang Pro (Wanxiang)",
-                Schema::Ice => "Rime Ice",
-                Schema::Frost => "Rime Frost",
-                Schema::Mint => "Mint Input",
-            },
-        }
+    pub fn display_name_lang(&self, lang: Lang) -> String {
+        L10n::new(lang).t(self.i18n_key()).to_string()
     }
 
     /// 所属仓库 owner
@@ -215,18 +206,8 @@ impl Schema {
             _ => None, // 需要实际检测
         }
     }
-}
 
-impl fmt::Display for Schema {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.display_name())
-    }
-}
-
-impl std::str::FromStr for Schema {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    pub fn parse_with_lang(s: &str, lang: Lang) -> anyhow::Result<Self> {
         match s {
             "wanxiang" | "base" => Ok(Schema::WanxiangBase),
             "moqi" => Ok(Schema::WanxiangMoqi),
@@ -241,8 +222,22 @@ impl std::str::FromStr for Schema {
             "ice" | "wusong" | "雾凇" => Ok(Schema::Ice),
             "frost" | "baishuang" | "白霜" => Ok(Schema::Frost),
             "mint" | "bohe" | "薄荷" => Ok(Schema::Mint),
-            _ => anyhow::bail!("未知方案: {}", s),
+            _ => anyhow::bail!("{}: {}", L10n::new(lang).t("schema.unknown"), s),
         }
+    }
+}
+
+impl fmt::Display for Schema {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.display_name())
+    }
+}
+
+impl std::str::FromStr for Schema {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Schema::parse_with_lang(s, Lang::En)
     }
 }
 
@@ -258,12 +253,12 @@ pub enum Engine {
 
 impl Engine {
     #[allow(dead_code)]
-    pub fn display_name(&self) -> &'static str {
+    pub fn display_name(&self) -> String {
         match self {
-            Engine::Weasel => "小狼毫 (Weasel)",
-            Engine::Squirrel => "鼠须管 (Squirrel)",
-            Engine::Fcitx5 => "Fcitx5",
-            Engine::IBus => "IBus",
+            Engine::Weasel => "Weasel".into(),
+            Engine::Squirrel => "Squirrel".into(),
+            Engine::Fcitx5 => "Fcitx5".into(),
+            Engine::IBus => "IBus".into(),
         }
     }
 }
@@ -282,11 +277,11 @@ pub struct Config {
     pub auto_update_countdown: i32,
     pub pre_update_hook: String,
     pub post_update_hook: String,
-    pub language: String,          // "zh" | "en"
-    pub fcitx_compat: bool,        // Linux: 同步到 ~/.config/fcitx/rime/
-    pub fcitx_use_link: bool,      // 使用软链接还是复制
-    pub model_patch_enabled: bool, // 是否自动 patch 模型
-    pub skin_patch_key: String,    // 内置皮肤 key, 为空表示不 patch
+    pub language: String,           // "zh" | "en"
+    pub engine_sync_enabled: bool,  // 是否同步到其他已安装引擎目录
+    pub engine_sync_use_link: bool, // 使用软链接还是复制
+    pub model_patch_enabled: bool,  // 是否自动 patch 模型
+    pub skin_patch_key: String,     // 内置皮肤 key, 为空表示不 patch
 }
 
 impl Default for Config {
@@ -304,8 +299,8 @@ impl Default for Config {
             pre_update_hook: String::new(),
             post_update_hook: String::new(),
             language: "zh".into(),
-            fcitx_compat: false,
-            fcitx_use_link: true,
+            engine_sync_enabled: false,
+            engine_sync_use_link: true,
             model_patch_enabled: false,
             skin_patch_key: String::new(),
         }
@@ -331,6 +326,43 @@ pub struct UpdateRecord {
     pub tag: String,
     pub apply_time: String,
     pub sha256: String,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct CancelSignal {
+    cancelled: Arc<AtomicBool>,
+}
+
+#[derive(Debug)]
+pub struct UpdateCancelled;
+
+impl fmt::Display for UpdateCancelled {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "update cancelled")
+    }
+}
+
+impl std::error::Error for UpdateCancelled {}
+
+impl CancelSignal {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+
+    pub fn checkpoint(&self) -> Result<()> {
+        if self.is_cancelled() {
+            return Err(anyhow::Error::new(UpdateCancelled));
+        }
+        Ok(())
+    }
 }
 
 // ── GitHub API 类型 ──
@@ -424,6 +456,10 @@ mod tests {
         assert_eq!("mint".parse::<Schema>().unwrap(), Schema::Mint);
         assert_eq!("薄荷".parse::<Schema>().unwrap(), Schema::Mint);
         assert!("unknown".parse::<Schema>().is_err());
+        assert!(Schema::parse_with_lang("unknown", Lang::Zh)
+            .unwrap_err()
+            .to_string()
+            .contains("未知方案"));
     }
 
     #[test]
@@ -507,5 +543,14 @@ mod tests {
         assert!(!config.proxy_enabled);
         assert!(!config.model_patch_enabled);
         assert_eq!(config.language, "zh");
+    }
+
+    #[test]
+    fn test_config_serialization_uses_engine_sync_field_names() {
+        let json = serde_json::to_string(&Config::default()).expect("serialize config");
+        assert!(json.contains("engine_sync_enabled"));
+        assert!(json.contains("engine_sync_use_link"));
+        assert!(!json.contains("fcitx_compat"));
+        assert!(!json.contains("fcitx_use_link"));
     }
 }

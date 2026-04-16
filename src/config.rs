@@ -1,3 +1,4 @@
+use crate::i18n::{L10n, Lang};
 use crate::types::Config;
 use anyhow::{Context, Result};
 use std::fs;
@@ -69,26 +70,29 @@ impl Manager {
 }
 
 fn get_config_path() -> Result<PathBuf> {
+    let t = L10n::new(Lang::Zh);
     let dir = if cfg!(target_os = "windows") {
-        let appdata = std::env::var("APPDATA").context("APPDATA 未设置")?;
+        let appdata =
+            std::env::var("APPDATA").with_context(|| t.t("config.appdata_missing").to_string())?;
         PathBuf::from(appdata)
     } else if cfg!(target_os = "macos") {
         dirs::home_dir()
-            .context("无法获取 HOME")?
+            .with_context(|| t.t("config.home_missing").to_string())?
             .join("Library/Application Support")
     } else {
-        dirs::config_dir().context("无法获取 config 目录")?
+        dirs::config_dir().with_context(|| t.t("config.config_dir_missing").to_string())?
     };
     Ok(dir.join("snout/config.json"))
 }
 
 fn load_or_create_config(path: &Path) -> Result<Config> {
+    let t = L10n::new(Lang::Zh);
     if path.exists() {
         let data = fs::read_to_string(path)?;
         match serde_json::from_str::<Config>(&data) {
             Ok(cfg) => return Ok(cfg),
             Err(e) => {
-                eprintln!("⚠️ 配置文件解析失败 ({e})，使用默认配置");
+                eprintln!("⚠️ {} ({e})", t.t("config.parse_failed_defaulting"));
             }
         }
     }
@@ -102,14 +106,21 @@ fn detect_rime_dir() -> PathBuf {
     } else if cfg!(target_os = "macos") {
         dirs::home_dir().unwrap_or_default().join("Library/Rime")
     } else {
-        // Linux: 优先 Fcitx5, 然后 IBus
-        let fcitx5 = dirs::data_dir().unwrap_or_default().join("fcitx5/rime");
-        if fcitx5.parent().map(|p| p.exists()).unwrap_or(false) {
+        // Linux: 优先已有的 Fcitx5 数据目录, 然后 IBus，再按已安装引擎推断默认目录。
+        let fcitx5 = linux_fcitx5_rime_dir();
+        if fcitx5.exists() {
+            return fcitx5;
+        }
+
+        let ibus = linux_ibus_rime_dir();
+        if ibus.exists() {
+            return ibus;
+        }
+
+        if which_exists("fcitx5-remote") {
             fcitx5
         } else {
-            dirs::home_dir()
-                .unwrap_or_default()
-                .join(".config/ibus/rime")
+            ibus
         }
     }
 }
@@ -133,10 +144,10 @@ pub fn detect_installed_engines() -> Vec<String> {
 
     #[cfg(target_os = "linux")]
     {
-        if which_exists("fcitx5") || fcitx5_rime_installed() {
+        if which_exists("fcitx5-remote") || fcitx5_rime_installed() {
             engines.push("fcitx5".into());
         }
-        if which_exists("ibus-daemon") {
+        if which_exists("ibus") {
             engines.push("ibus".into());
         }
     }
@@ -171,6 +182,17 @@ fn which_exists(cmd: &str) -> bool {
 
 #[cfg(target_os = "linux")]
 fn fcitx5_rime_installed() -> bool {
-    let data_dir = dirs::data_dir().unwrap_or_default();
-    data_dir.join("fcitx5/rime").exists()
+    linux_fcitx5_rime_dir().exists()
+}
+
+#[cfg(target_os = "linux")]
+fn linux_fcitx5_rime_dir() -> PathBuf {
+    dirs::data_dir().unwrap_or_default().join("fcitx5/rime")
+}
+
+#[cfg(target_os = "linux")]
+fn linux_ibus_rime_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".config/ibus/rime")
 }

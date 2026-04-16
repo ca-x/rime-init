@@ -1,42 +1,44 @@
+use crate::i18n::{L10n, Lang};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 /// 跨平台部署 Rime
-pub fn deploy() -> Result<()> {
+pub fn deploy(lang: Lang) -> Result<()> {
+    let t = L10n::new(lang);
     let engines = detect_engines();
-    ensure_deployable_engine_set(!engines.is_empty())?;
+    ensure_deployable_engine_set(!engines.is_empty(), &t)?;
 
     let mut success_count = 0usize;
     let mut failures = Vec::new();
     for engine in &engines {
-        match deploy_to(engine) {
+        match deploy_to(engine, &t) {
             Ok(()) => success_count += 1,
             Err(e) => {
-                eprintln!("⚠️  部署到 {engine} 失败: {e}");
+                eprintln!("⚠️  {} ({engine}): {e}", t.t("deploy.target_failed"));
                 failures.push(format!("{engine}: {e}"));
             }
         }
     }
 
-    finalize_deploy_result(success_count, failures)
+    finalize_deploy_result(success_count, failures, &t)
 }
 
 /// 部署到指定引擎
-pub fn deploy_to(engine: &str) -> Result<()> {
+pub fn deploy_to(engine: &str, t: &L10n) -> Result<()> {
     match engine {
         #[cfg(target_os = "linux")]
         "fcitx5" => {
-            let bin = find_binary("fcitx5-remote")?;
+            let bin = find_binary("fcitx5-remote", t)?;
             std::process::Command::new(bin).arg("-r").spawn()?;
-            println!("  ✅ Fcitx5 已重载");
+            println!("  ✅ {}", t.t("deploy.reloaded.fcitx5"));
         }
         #[cfg(target_os = "linux")]
         "ibus" => {
-            let bin = find_binary("ibus")?;
+            let bin = find_binary("ibus", t)?;
             std::process::Command::new(bin)
                 .args(["engine", "Rime"])
                 .spawn()?;
-            println!("  ✅ IBus 已重载");
+            println!("  ✅ {}", t.t("deploy.reloaded.ibus"));
         }
         #[cfg(target_os = "macos")]
         "squirrel" => {
@@ -45,7 +47,7 @@ pub fn deploy_to(engine: &str) -> Result<()> {
                 std::process::Command::new(squirrel)
                     .arg("--reload")
                     .spawn()?;
-                println!("  ✅ 鼠须管已重载");
+                println!("  ✅ {}", t.t("deploy.reloaded.squirrel"));
             }
         }
         #[cfg(target_os = "windows")]
@@ -53,7 +55,7 @@ pub fn deploy_to(engine: &str) -> Result<()> {
             let weasel = Path::new(r"C:\Program Files\Rime\weaselDeployer.exe");
             if weasel.exists() {
                 std::process::Command::new(weasel).spawn()?;
-                println!("  ✅ 小狼毫已重载");
+                println!("  ✅ {}", t.t("deploy.reloaded.weasel"));
             }
         }
         _ => {}
@@ -114,7 +116,13 @@ pub fn engine_data_dir(engine: &str) -> Option<PathBuf> {
 
 /// 同步 Rime 目录到所有已安装引擎的数据目录
 #[allow(dead_code)]
-pub fn sync_to_engines(src_dir: &Path, exclude_files: &[String]) -> Result<()> {
+pub fn sync_to_engines(
+    src_dir: &Path,
+    exclude_files: &[String],
+    use_link: bool,
+    lang: Lang,
+) -> Result<()> {
+    let t = L10n::new(lang);
     let engines = detect_engines();
     if engines.len() <= 1 {
         return Ok(());
@@ -128,15 +136,26 @@ pub fn sync_to_engines(src_dir: &Path, exclude_files: &[String]) -> Result<()> {
             continue;
         }
         if let Some(target) = engine_data_dir(engine) {
-            std::fs::create_dir_all(&target)?;
-            if let Err(e) = sync_dir_filtered(src_dir, &target, exclude_files) {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let sync_result = if use_link && cfg!(unix) {
+                sync_via_symlink(src_dir, &target)
+            } else {
+                sync_dir_filtered(src_dir, &target, exclude_files)
+            };
+            if let Err(e) = sync_result {
                 errors.push(format!("{engine}: {e}"));
             }
         }
     }
 
     if !errors.is_empty() {
-        eprintln!("⚠️ 部分引擎同步失败: {}", errors.join("; "));
+        eprintln!(
+            "⚠️ {}: {}",
+            t.t("deploy.sync_partial_failed"),
+            errors.join("; ")
+        );
     }
     Ok(())
 }
@@ -170,71 +189,27 @@ fn sync_dir_filtered(src: &Path, dst: &Path, exclude_files: &[String]) -> Result
     Ok(())
 }
 
-/// 同步 Rime 目录到其他引擎 (Fcitx 兼容模式)
-pub fn sync_to_fcitx(rime_dir: &Path, use_link: bool) -> Result<()> {
-    #[cfg(target_os = "linux")]
-    {
-        let fcitx_rime = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".config/fcitx/rime");
-
-        if !fcitx_rime.parent().map(|p| p.exists()).unwrap_or(false) {
-            return Ok(()); // fcitx 未安装
-        }
-
-        std::fs::create_dir_all(&fcitx_rime)?;
-
-        if use_link {
-            // 软链接模式: 删除旧目录，创建符号链接
-            if fcitx_rime.exists() {
-                // 备份旧目录
-                let backup = fcitx_rime.with_extension("bak");
-                if fcitx_rime.is_symlink() {
-                    std::fs::remove_file(&fcitx_rime)?;
-                } else if fcitx_rime.is_dir() {
-                    if backup.exists() {
-                        std::fs::remove_dir_all(&backup)?;
-                    }
-                    std::fs::rename(&fcitx_rime, &backup)?;
-                }
-            }
-            #[cfg(unix)]
-            std::os::unix::fs::symlink(rime_dir, &fcitx_rime)?;
-            println!(
-                "  ✅ 已创建软链接: {} -> {}",
-                fcitx_rime.display(),
-                rime_dir.display()
-            );
-        } else {
-            // 复制模式
-            copy_dir_recursive(rime_dir, &fcitx_rime)?;
-            println!("  ✅ 已同步到: {}", fcitx_rime.display());
-        }
-    }
-
-    Ok(())
-}
-
 /// 执行 hook 脚本
-pub fn run_hook(hook_path: &str, phase: &str) -> Result<()> {
+pub fn run_hook(hook_path: &str, phase: &str, lang: Lang) -> Result<()> {
     if hook_path.is_empty() {
         return Ok(());
     }
 
+    let t = L10n::new(lang);
     let path = Path::new(hook_path);
     if !path.exists() {
-        eprintln!("  ⚠️ {phase} hook 不存在: {hook_path}");
+        eprintln!("  ⚠️ {phase} {}: {hook_path}", t.t("deploy.hook_missing"));
         return Ok(());
     }
 
-    println!("  🔧 执行 {phase} hook: {hook_path}");
+    println!("  🔧 {phase} {}: {hook_path}", t.t("deploy.hook_running"));
     let status = std::process::Command::new("sh")
         .arg("-c")
         .arg(hook_path)
         .status()?;
 
     if !status.success() {
-        anyhow::bail!("{phase} hook 执行失败: {hook_path}");
+        anyhow::bail!("{phase} {}: {hook_path}", t.t("deploy.hook_failed"));
     }
     Ok(())
 }
@@ -245,8 +220,8 @@ fn has_binary(name: &str) -> bool {
     which(name).is_some()
 }
 
-fn find_binary(name: &str) -> Result<PathBuf> {
-    which(name).ok_or_else(|| anyhow::anyhow!("未找到: {name}"))
+fn find_binary(name: &str, lang: &L10n) -> Result<PathBuf> {
+    which(name).ok_or_else(|| anyhow::anyhow!("{}: {name}", lang.t("deploy.binary_not_found")))
 }
 
 fn which(name: &str) -> Option<PathBuf> {
@@ -259,42 +234,51 @@ fn which(name: &str) -> Option<PathBuf> {
         .map(|s| PathBuf::from(s.trim()))
 }
 
-fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let src_path = entry.path();
-        let dst_path = dst.join(entry.file_name());
-
-        // 跳过 build 目录
-        if entry.file_name() == "build" {
-            continue;
-        }
-
-        if src_path.is_dir() {
-            copy_dir_recursive(&src_path, &dst_path)?;
-        } else {
-            std::fs::copy(&src_path, &dst_path)?;
+#[cfg(unix)]
+fn sync_via_symlink(src: &Path, target: &Path) -> Result<()> {
+    if target.exists() || target.is_symlink() {
+        let backup = target.with_extension("bak");
+        if target.is_symlink() || target.is_file() {
+            std::fs::remove_file(target)?;
+        } else if target.is_dir() {
+            if backup.exists() {
+                if backup.is_dir() {
+                    std::fs::remove_dir_all(&backup)?;
+                } else {
+                    std::fs::remove_file(&backup)?;
+                }
+            }
+            std::fs::rename(target, &backup)?;
         }
     }
+
+    std::os::unix::fs::symlink(src, target)?;
     Ok(())
 }
 
-fn ensure_deployable_engine_set(has_engines: bool) -> Result<()> {
+fn ensure_deployable_engine_set(has_engines: bool, t: &L10n) -> Result<()> {
     if has_engines {
         Ok(())
     } else {
-        anyhow::bail!("未检测到 Rime 引擎");
+        anyhow::bail!("{}", t.t("deploy.no_engine_detected"));
     }
 }
 
-fn finalize_deploy_result(success_count: usize, failures: Vec<String>) -> Result<()> {
+fn finalize_deploy_result(success_count: usize, failures: Vec<String>, t: &L10n) -> Result<()> {
     if success_count == 0 {
-        anyhow::bail!("所有 Rime 引擎部署失败: {}", failures.join("; "));
+        anyhow::bail!(
+            "{}: {}",
+            t.t("deploy.all_engines_failed"),
+            failures.join("; ")
+        );
     }
 
     if !failures.is_empty() {
-        eprintln!("⚠️  部分引擎部署失败: {}", failures.join("; "));
+        eprintln!(
+            "⚠️  {}: {}",
+            t.t("deploy.partial_engines_failed"),
+            failures.join("; ")
+        );
     }
 
     Ok(())
@@ -303,22 +287,150 @@ fn finalize_deploy_result(success_count: usize, failures: Vec<String>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[cfg(unix)]
+    fn temp_dir(name: &str) -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("snout-{name}-{nanos}"));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
 
     #[test]
     fn rejects_empty_engine_set() {
-        assert!(ensure_deployable_engine_set(false).is_err());
-        assert!(ensure_deployable_engine_set(true).is_ok());
+        let t = L10n::new(Lang::Zh);
+        assert!(ensure_deployable_engine_set(false, &t).is_err());
+        assert!(ensure_deployable_engine_set(true, &t).is_ok());
     }
 
     #[test]
     fn fails_when_all_deployments_fail() {
-        let err = finalize_deploy_result(0, vec!["fcitx5: boom".into()]).unwrap_err();
-        assert!(err.to_string().contains("所有 Rime 引擎部署失败"));
+        let t = L10n::new(Lang::Zh);
+        let err = finalize_deploy_result(0, vec!["fcitx5: boom".into()], &t).unwrap_err();
+        assert!(err.to_string().contains(t.t("deploy.all_engines_failed")));
     }
 
     #[test]
     fn succeeds_when_at_least_one_deployment_succeeds() {
-        assert!(finalize_deploy_result(1, Vec::new()).is_ok());
-        assert!(finalize_deploy_result(1, vec!["ibus: failed".into()]).is_ok());
+        let t = L10n::new(Lang::Zh);
+        assert!(finalize_deploy_result(1, Vec::new(), &t).is_ok());
+        assert!(finalize_deploy_result(1, vec!["ibus: failed".into()], &t).is_ok());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fcitx_engine_data_dir_uses_fcitx5_data_path() {
+        let path = engine_data_dir("fcitx5").expect("fcitx5 dir");
+        assert!(path.ends_with("fcitx5/rime"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sync_via_symlink_does_not_create_backup_for_missing_target() {
+        let base = temp_dir("deployer-link");
+        let src = base.join("src");
+        let target = base.join("target");
+        std::fs::create_dir_all(&src).expect("create src dir");
+
+        sync_via_symlink(&src, &target).expect("create symlink");
+
+        assert!(target.is_symlink());
+        assert!(!target.with_extension("bak").exists());
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn sync_dir_filtered_copies_files_and_skips_exclusions() {
+        let base = temp_dir("deployer-copy");
+        let src = base.join("src");
+        let dst = base.join("dst");
+        std::fs::create_dir_all(src.join("nested")).expect("create nested src dir");
+        std::fs::create_dir_all(src.join("build")).expect("create build dir");
+        std::fs::write(src.join("keep.txt"), "keep").expect("write keep");
+        std::fs::write(src.join("skip.txt"), "skip").expect("write skip");
+        std::fs::write(src.join("nested").join("child.txt"), "child").expect("write child");
+        std::fs::write(src.join("build").join("artifact.txt"), "artifact").expect("write artifact");
+        std::fs::create_dir_all(&dst).expect("create dst");
+        std::fs::write(dst.join("preexisting.txt"), "stay").expect("write preexisting");
+
+        sync_dir_filtered(&src, &dst, &["skip.txt".into()]).expect("sync dir");
+
+        assert_eq!(
+            std::fs::read_to_string(dst.join("keep.txt")).unwrap(),
+            "keep"
+        );
+        assert_eq!(
+            std::fs::read_to_string(dst.join("nested").join("child.txt")).unwrap(),
+            "child"
+        );
+        assert!(!dst.join("skip.txt").exists());
+        assert!(!dst.join("build").exists());
+        assert_eq!(
+            std::fs::read_to_string(dst.join("preexisting.txt")).unwrap(),
+            "stay"
+        );
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn run_hook_accepts_empty_and_missing_paths() {
+        assert!(run_hook("", "pre-update", Lang::En).is_ok());
+        assert!(run_hook("/definitely/missing/hook.sh", "pre-update", Lang::En).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_hook_reports_failure_for_nonzero_exit() {
+        let base = temp_dir("hook-fail");
+        let script = base.join("fail.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 7\n").expect("write script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).unwrap();
+        }
+
+        let err = run_hook(
+            script.to_str().expect("script path"),
+            "post-update",
+            Lang::En,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("Hook execution failed"));
+
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_hook_runs_successful_commands() {
+        let base = temp_dir("hook-ok");
+        let script = base.join("ok.sh");
+        std::fs::write(&script, "#!/bin/sh\nexit 0\n").expect("write script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = std::fs::metadata(&script).unwrap().permissions();
+            perms.set_mode(0o755);
+            std::fs::set_permissions(&script, perms).unwrap();
+        }
+
+        assert!(run_hook(
+            script.to_str().expect("script path"),
+            "post-update",
+            Lang::En
+        )
+        .is_ok());
+
+        std::fs::remove_dir_all(&base).ok();
     }
 }

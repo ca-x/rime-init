@@ -1,3 +1,4 @@
+use crate::i18n::{L10n, Lang};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,16 +16,19 @@ macro_rules! map {
 pub struct SkinPreset {
     pub key: String,
     pub display_name: String,
+    pub display_name_key: &'static str,
     pub author: String,
     pub values: HashMap<String, serde_yaml::Value>,
 }
 
 /// 获取所有内置主题
-pub fn builtin_skins() -> Vec<SkinPreset> {
+pub fn builtin_skins(lang: Lang) -> Vec<SkinPreset> {
+    let t = L10n::new(lang);
     vec![
         SkinPreset {
             key: "jianchun".into(),
-            display_name: "简纯".into(),
+            display_name: t.t("skin.jianchun").into(),
+            display_name_key: "skin.jianchun",
             author: "amzxyz".into(),
             values: map![
                 "name".into() => "简纯".into(),
@@ -39,7 +43,8 @@ pub fn builtin_skins() -> Vec<SkinPreset> {
         },
         SkinPreset {
             key: "win11_light".into(),
-            display_name: "Win11浅色".into(),
+            display_name: t.t("skin.win11_light").into(),
+            display_name_key: "skin.win11_light",
             author: "community".into(),
             values: map![
                 "name".into() => "Win11浅色".into(),
@@ -52,7 +57,8 @@ pub fn builtin_skins() -> Vec<SkinPreset> {
         },
         SkinPreset {
             key: "win11_dark".into(),
-            display_name: "Win11暗色".into(),
+            display_name: t.t("skin.win11_dark").into(),
+            display_name_key: "skin.win11_dark",
             author: "community".into(),
             values: map![
                 "name".into() => "Win11暗色".into(),
@@ -64,7 +70,8 @@ pub fn builtin_skins() -> Vec<SkinPreset> {
         },
         SkinPreset {
             key: "wechat".into(),
-            display_name: "微信".into(),
+            display_name: t.t("skin.wechat").into(),
+            display_name_key: "skin.wechat",
             author: "community".into(),
             values: map![
                 "name".into() => "微信".into(),
@@ -76,7 +83,8 @@ pub fn builtin_skins() -> Vec<SkinPreset> {
         },
         SkinPreset {
             key: "mac_light".into(),
-            display_name: "Mac 白".into(),
+            display_name: t.t("skin.mac_light").into(),
+            display_name_key: "skin.mac_light",
             author: "community".into(),
             values: map![
                 "name".into() => "Mac 白".into(),
@@ -86,7 +94,8 @@ pub fn builtin_skins() -> Vec<SkinPreset> {
         },
         SkinPreset {
             key: "reimu".into(),
-            display_name: "灵梦".into(),
+            display_name: t.t("skin.reimu").into(),
+            display_name_key: "skin.reimu",
             author: "Lufs X".into(),
             values: map![
                 "name".into() => "灵梦".into(),
@@ -101,12 +110,12 @@ pub fn builtin_skins() -> Vec<SkinPreset> {
 
 /// 通过 key 查找主题
 pub fn find_skin(key: &str) -> Option<SkinPreset> {
-    builtin_skins().into_iter().find(|s| s.key == key)
+    builtin_skins(Lang::Zh).into_iter().find(|s| s.key == key)
 }
 
 /// 列出所有可用的内置主题
-pub fn list_available_skins() -> Vec<(String, String)> {
-    builtin_skins()
+pub fn list_available_skins(lang: Lang) -> Vec<(String, String)> {
+    builtin_skins(lang)
         .into_iter()
         .map(|s| (s.key, s.display_name))
         .collect()

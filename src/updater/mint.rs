@@ -1,6 +1,7 @@
 use super::base::{BaseUpdater, UpdateResult};
 use crate::i18n::{L10n, Lang};
 use crate::types::*;
+use crate::updater::{UpdateComponent, UpdateEvent, UpdatePhase};
 use anyhow::Result;
 use std::collections::HashSet;
 use std::path::Path;
@@ -12,13 +13,19 @@ pub struct MintUpdater {
 
 impl MintUpdater {
     /// 检查方案更新（主分支归档）
-    pub async fn check_scheme_update(&self) -> Result<UpdateInfo> {
+    pub async fn check_scheme_update(&self, cancel: Option<&CancelSignal>) -> Result<UpdateInfo> {
         if self.base.client.use_mirror() {
             Ok(mint_mirror_update_info())
         } else {
             self.base
                 .client
-                .fetch_github_branch_archive(MINT_OWNER, MINT_REPO, MINT_BRANCH, MINT_ARCHIVE)
+                .fetch_github_branch_archive(
+                    MINT_OWNER,
+                    MINT_REPO,
+                    MINT_BRANCH,
+                    MINT_ARCHIVE,
+                    cancel,
+                )
                 .await
         }
     }
@@ -27,12 +34,18 @@ impl MintUpdater {
     pub async fn update_scheme(
         &self,
         config: &crate::types::Config,
-        mut progress: impl FnMut(&str, f64),
+        cancel: Option<&CancelSignal>,
+        mut progress: impl FnMut(UpdateEvent),
     ) -> Result<UpdateResult> {
         let t = L10n::new(Lang::from_str(&config.language));
-        progress(t.t("update.mint_scheme_checking"), 0.05);
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Checking,
+            progress: 0.05,
+            detail: t.t("update.mint_scheme_checking").into(),
+        });
 
-        let info = self.check_scheme_update().await?;
+        let info = self.check_scheme_update(cancel).await?;
         let record_path = self.base.cache_dir.join("scheme_record.json");
         let local = BaseUpdater::load_record(&record_path);
 
@@ -42,7 +55,12 @@ impl MintUpdater {
             .unwrap_or(false);
 
         if !scheme_switched && !BaseUpdater::needs_update(local.as_ref(), &info) {
-            progress(t.t("update.up_to_date"), 1.0);
+            progress(UpdateEvent {
+                component: UpdateComponent::Scheme,
+                phase: UpdatePhase::Finished,
+                progress: 1.0,
+                detail: t.t("update.up_to_date").into(),
+            });
             return Ok(BaseUpdater::success_result(
                 t.t("update.scheme"),
                 &info.tag,
@@ -52,17 +70,37 @@ impl MintUpdater {
         }
 
         if scheme_switched {
-            progress(t.t("update.scheme_switched"), 0.05);
+            progress(UpdateEvent {
+                component: UpdateComponent::Scheme,
+                phase: UpdatePhase::Checking,
+                progress: 0.05,
+                detail: t.t("update.scheme_switched").into(),
+            });
         }
 
         self.base
-            .download_and_extract(&info, config, &self.base.rime_dir, &mut progress)
+            .download_and_extract(
+                &info,
+                config,
+                &self.base.rime_dir,
+                UpdateComponent::Scheme,
+                cancel,
+                &mut progress,
+            )
             .await?;
 
         crate::fileutil::extract::handle_nested_dir(&self.base.rime_dir, &info.name)?;
         filter_mint_distribution(&self.base.rime_dir)?;
 
-        progress(t.t("update.saving"), 0.95);
+        if let Some(signal) = cancel {
+            signal.checkpoint()?;
+        }
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Saving,
+            progress: 0.95,
+            detail: t.t("update.saving").into(),
+        });
         let record = UpdateRecord {
             name: info.name.clone(),
             update_time: info.update_time.clone(),
@@ -77,7 +115,12 @@ impl MintUpdater {
             let _ = std::fs::remove_dir_all(&build_dir);
         }
 
-        progress(t.t("update.mint_scheme_done"), 1.0);
+        progress(UpdateEvent {
+            component: UpdateComponent::Scheme,
+            phase: UpdatePhase::Finished,
+            progress: 1.0,
+            detail: t.t("update.mint_scheme_done").into(),
+        });
         Ok(UpdateResult {
             component: t.t("update.scheme").into(),
             old_version: local
