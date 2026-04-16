@@ -13,41 +13,45 @@ use i18n::{L10n, Lang};
 use types::Schema;
 
 #[derive(Parser, Debug)]
-#[command(name = "snout", version, about = "Rime 输入法初始化与更新工具")]
+#[command(
+    name = "snout",
+    version,
+    about = "Rime 输入法初始化与更新工具 / Rime input method init and update tool"
+)]
 struct Cli {
-    /// 首次初始化模式
+    /// 首次初始化模式 / First-time setup mode
     #[arg(long)]
     init: bool,
 
-    /// 更新所有组件
+    /// 更新所有组件 / Update all components
     #[arg(long, short)]
     update: bool,
 
-    /// 仅更新方案
+    /// 仅更新方案 / Update scheme only
     #[arg(long)]
     scheme: bool,
 
-    /// 仅更新词库
+    /// 仅更新词库 / Update dictionary only
     #[arg(long)]
     dict: bool,
 
-    /// 仅更新模型
+    /// 仅更新模型 / Update model only
     #[arg(long)]
     model: bool,
 
-    /// 启用模型 patch
+    /// 启用模型 patch / Enable model patch
     #[arg(long)]
     patch_model: bool,
 
-    /// 使用 CNB 镜像
+    /// 使用 CNB 镜像 / Use CNB mirror
     #[arg(long)]
     mirror: bool,
 
-    /// 代理地址 (socks5://host:port 或 http://host:port)
+    /// 代理地址 / Proxy address (socks5://host:port or http://host:port)
     #[arg(long)]
     proxy: Option<String>,
 
-    /// 语言 (zh/en)
+    /// 语言 / Language (zh/en)
     #[arg(long)]
     lang: Option<String>,
 }
