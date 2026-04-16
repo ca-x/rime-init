@@ -116,7 +116,6 @@ fn filter_mint_distribution(base: &Path) -> Result<()> {
         "melt_eng.dict.yaml",
         "melt_eng.schema.yaml",
         "opencc",
-        "plum",
         "radical_pinyin.dict.yaml",
         "radical_pinyin.schema.yaml",
         "radical_pinyin_flypy.schema.yaml",
@@ -177,6 +176,7 @@ mod tests {
         std::fs::write(dir.join("default.yaml"), "").expect("write default");
         std::fs::write(dir.join("rime_mint.schema.yaml"), "").expect("write schema");
         std::fs::create_dir_all(dir.join("dicts")).expect("create dicts");
+        std::fs::create_dir_all(dir.join("plum")).expect("create plum");
         std::fs::create_dir_all(dir.join(".github")).expect("create github");
         std::fs::write(dir.join("README.md"), "").expect("write readme");
 
@@ -185,6 +185,7 @@ mod tests {
         assert!(dir.join("default.yaml").exists());
         assert!(dir.join("rime_mint.schema.yaml").exists());
         assert!(dir.join("dicts").exists());
+        assert!(!dir.join("plum").exists());
         assert!(!dir.join(".github").exists());
         assert!(!dir.join("README.md").exists());
 

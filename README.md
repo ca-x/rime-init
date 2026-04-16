@@ -73,6 +73,11 @@ snout --model
 
 # 更新模型并启用 patch
 snout --model --patch-model
+
+# 先切到薄荷方案，再更新薄荷
+snout --init
+# 或在配置里将 schema 设为 Mint 后执行
+snout --scheme
 ```
 
 ### 其他选项
@@ -80,6 +85,9 @@ snout --model --patch-model
 ```bash
 # 使用 CNB 镜像 (国内加速)
 snout --update --mirror
+
+# 薄荷方案同样支持镜像下载
+snout --scheme --mirror
 
 # 设置代理
 snout --update --proxy socks5://127.0.0.1:1080
@@ -110,6 +118,21 @@ snout --lang en --update
 - **薄荷**：写入 `rime_mint.custom.yaml`
 
 其中雾凇 / 白霜 / 薄荷使用 schema 级 `patch:` 覆写方式挂接模型参数。
+
+### 薄荷方案说明
+
+薄荷方案来源于 [Mintimate/oh-my-rime](https://github.com/Mintimate/oh-my-rime) 仓库。
+
+`snout` 在部署薄荷时会只保留 Rime 运行所需资源，例如：
+
+- `rime_mint*.yaml`
+- `dicts/`
+- `lua/`
+- `opencc/`
+- `weasel.yaml`
+- `squirrel.yaml`
+
+不会把仓库里的 README、CI、Issue 模板等非运行时文件复制到用户 Rime 目录。
 
 ## TUI 菜单
 
@@ -251,6 +274,7 @@ snout                  # Launch TUI
 snout --init           # First-time setup wizard
 snout --update         # Update everything
 snout --update --mirror  # Use CNB mirror (China)
+snout --scheme --mirror  # Update current scheme with mirror support (including Mint)
 snout --update --proxy socks5://127.0.0.1:1080  # With proxy
 snout --lang en --update  # English interface
 ```
