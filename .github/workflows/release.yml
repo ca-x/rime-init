@@ -121,3 +121,29 @@ jobs:
           find release-artifacts -type f -print0 | while IFS= read -r -d '' file; do
             gh release upload "${{ github.ref_name }}" "$file" --clobber
           done
+
+  publish-aur-snout-bin:
+    name: Publish snout-bin to AUR
+    runs-on: ubuntu-latest
+    needs:
+      - publish-release
+    steps:
+      - uses: actions/checkout@v5
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+      - name: Update PKGBUILD version
+        run: |
+          sed -i "s/^pkgver=.*/pkgver=${{ steps.version.outputs.version }}/" snout-bin/PKGBUILD
+          sed -i "s/^pkgrel=.*/pkgrel=1/" snout-bin/PKGBUILD
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.2
+        with:
+          pkgname: snout-bin
+          pkgbuild: ./snout-bin/PKGBUILD
+          updpkgsums: true
+          commit_username: ${{ secrets.AUR_USERNAME }}
+          commit_email: ${{ secrets.AUR_EMAIL }}
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: Update to version ${{ steps.version.outputs.version }}
+          ssh_keyscan_types: rsa,ecdsa,ed25519

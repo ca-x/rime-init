@@ -34,8 +34,8 @@ cargo build --release
 ### Arch Linux (AUR)
 
 ```bash
-# 待发布
-yay -S snout
+# binary package
+yay -S snout-bin
 ```
 
 ## 使用
