@@ -310,6 +310,16 @@ snout --scheme --mirror
 - Rime Frost
 - Mint Input
 
+### Capability Matrix
+
+| Capability | Wanxiang | Rime Ice | Rime Frost | Mint Input |
+|-----------|----------|----------|------------|------------|
+| Scheme update | ✅ | ✅ | ✅ | ✅ |
+| Independent dictionary update | ✅ | ✅ | ❌ | ❌ |
+| Wanxiang model download | ✅ | ✅ | ✅ | ✅ |
+| Model patch target | `wanxiang*.custom.yaml` | `rime_ice.custom.yaml` | `rime_frost.custom.yaml` | `rime_mint.custom.yaml` |
+| Skin patch | Windows / macOS | Windows / macOS | Windows / macOS | Windows / macOS |
+
 ## Model Patch
 
 `snout` downloads `wanxiang-lts-zh-hans.gram` from `amzxyz/RIME-LMDG` and can
