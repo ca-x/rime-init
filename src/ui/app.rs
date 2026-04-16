@@ -1401,7 +1401,7 @@ fn render_menu(f: &mut Frame, area: Rect, app: &App) {
     let selected_idx = app.menu_selected + 1;
     let install_message = config::rime_installation_message(app.t.lang());
     let detail = if !install_message.is_empty() {
-        vec![Line::from(install_message)]
+        detail_lines(&install_message)
     } else if let Some(reason) = menu_unavailable_reason(app, selected_idx) {
         vec![
             Line::from(vec![Span::styled(
@@ -1444,6 +1444,26 @@ fn render_menu(f: &mut Frame, area: Rect, app: &App) {
             )),
     );
     f.render_widget(detail_panel, chunks[1]);
+}
+
+fn detail_lines(message: &str) -> Vec<Line<'static>> {
+    message
+        .lines()
+        .map(|line| {
+            let style = if line.starts_with("⚠️") {
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD)
+            } else if line.trim_start().starts_with('•') {
+                Style::default().fg(Color::Cyan)
+            } else if line.trim_start().starts_with('-') || line.trim_start().starts_with("http") {
+                Style::default().fg(Color::Gray)
+            } else {
+                Style::default().fg(Color::White)
+            };
+            Line::from(vec![Span::styled(line.to_string(), style)])
+        })
+        .collect()
 }
 
 fn render_updating(f: &mut Frame, area: Rect, app: &App) {
