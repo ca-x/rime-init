@@ -134,18 +134,17 @@ pub fn detect_engines() -> Vec<String> {
 /// 获取主引擎数据目录
 #[allow(dead_code)]
 pub fn engine_data_dir(engine: &str) -> Option<PathBuf> {
-    let home = dirs::home_dir()?;
     match engine {
         #[cfg(target_os = "linux")]
         "fcitx5" => Some(dirs::data_dir()?.join("fcitx5/rime")),
         #[cfg(target_os = "linux")]
-        "ibus" => Some(home.join(".config/ibus/rime")),
+        "ibus" => Some(dirs::home_dir()?.join(".config/ibus/rime")),
         #[cfg(target_os = "linux")]
-        "fcitx" => Some(home.join(".config/fcitx/rime")),
+        "fcitx" => Some(dirs::home_dir()?.join(".config/fcitx/rime")),
         #[cfg(target_os = "macos")]
-        "squirrel" => Some(home.join("Library/Rime")),
+        "squirrel" => Some(dirs::home_dir()?.join("Library/Rime")),
         #[cfg(target_os = "macos")]
-        "fcitx5" => Some(home.join(".local/share/fcitx5/rime")),
+        "fcitx5" => Some(dirs::home_dir()?.join(".local/share/fcitx5/rime")),
         #[cfg(target_os = "windows")]
         "weasel" => windows_rime_user_dir(),
         _ => None,
@@ -177,11 +176,14 @@ pub fn sync_to_engines(
             if let Some(parent) = target.parent() {
                 std::fs::create_dir_all(parent)?;
             }
-            let sync_result = if use_link && cfg!(unix) {
+            #[cfg(unix)]
+            let sync_result = if use_link {
                 sync_via_symlink(src_dir, &target)
             } else {
                 sync_dir_filtered(src_dir, &target, exclude_files)
             };
+            #[cfg(not(unix))]
+            let sync_result = sync_dir_filtered(src_dir, &target, exclude_files);
             if let Err(e) = sync_result {
                 errors.push(format!("{engine}: {e}"));
             }
