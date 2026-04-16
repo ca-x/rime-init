@@ -89,6 +89,16 @@ struct ConfigStatusSnapshot {
     model_patch_status: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConfigAction {
+    Mirror,
+    Language,
+    ModelPatch,
+    EngineSync,
+    SyncStrategy,
+    Refresh,
+}
+
 #[derive(Clone)]
 struct ResolvedUpdateContext {
     schema: Schema,
@@ -519,20 +529,25 @@ fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<()
 }
 
 fn handle_config_key(app: &mut App, key: KeyCode) {
+    let actions = config_actions();
     match key {
         KeyCode::Up | KeyCode::Char('k') => {
             app.config_selected = app.config_selected.saturating_sub(1);
         }
         KeyCode::Down | KeyCode::Char('j') => {
-            if app.config_selected < 5 {
+            if app.config_selected + 1 < actions.len() {
                 app.config_selected += 1;
             }
         }
         KeyCode::Left | KeyCode::Right | KeyCode::Enter => {
             if let Ok(mut manager) = Manager::new() {
-                match app.config_selected {
-                    0 => manager.config.use_mirror = !manager.config.use_mirror,
-                    1 => {
+                match actions
+                    .get(app.config_selected)
+                    .copied()
+                    .unwrap_or(ConfigAction::Refresh)
+                {
+                    ConfigAction::Mirror => manager.config.use_mirror = !manager.config.use_mirror,
+                    ConfigAction::Language => {
                         manager.config.language = if manager.config.language.starts_with("zh") {
                             "en".into()
                         } else {
@@ -540,14 +555,25 @@ fn handle_config_key(app: &mut App, key: KeyCode) {
                         };
                         app.t = L10n::new(Lang::from_str(&manager.config.language));
                     }
-                    2 => manager.config.model_patch_enabled = !manager.config.model_patch_enabled,
-                    3 => manager.config.engine_sync_enabled = !manager.config.engine_sync_enabled,
-                    4 => manager.config.engine_sync_use_link = !manager.config.engine_sync_use_link,
-                    5 => {}
-                    _ => {}
+                    ConfigAction::ModelPatch => {
+                        manager.config.model_patch_enabled = !manager.config.model_patch_enabled
+                    }
+                    ConfigAction::EngineSync => {
+                        manager.config.engine_sync_enabled = !manager.config.engine_sync_enabled
+                    }
+                    ConfigAction::SyncStrategy => {
+                        manager.config.engine_sync_use_link = !manager.config.engine_sync_use_link
+                    }
+                    ConfigAction::Refresh => {}
                 }
                 let _ = manager.save();
-                if app.config_selected == 5 {
+                if matches!(
+                    actions
+                        .get(app.config_selected)
+                        .copied()
+                        .unwrap_or(ConfigAction::Refresh),
+                    ConfigAction::Refresh
+                ) {
                     refresh_config_status(app);
                 } else {
                     refresh_config_status(app);
@@ -566,6 +592,17 @@ fn enter_config_view(app: &mut App) {
     app.config_selected = 0;
     app.screen = AppScreen::ConfigView;
     refresh_config_status(app);
+}
+
+fn config_actions() -> Vec<ConfigAction> {
+    vec![
+        ConfigAction::Mirror,
+        ConfigAction::Language,
+        ConfigAction::ModelPatch,
+        ConfigAction::EngineSync,
+        ConfigAction::SyncStrategy,
+        ConfigAction::Refresh,
+    ]
 }
 
 fn refresh_config_status(app: &mut App) {
@@ -1136,7 +1173,7 @@ fn ui(f: &mut Frame, app: &App) {
         ),
         Span::styled(
             format!("v{}  ", env!("CARGO_PKG_VERSION")),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::Gray),
         ),
         Span::styled(
             app.schema.display_name_lang(app.t.lang()),
@@ -1187,7 +1224,7 @@ fn render_menu(f: &mut Frame, area: Rect, app: &App) {
             let idx = i + 1;
             let unavailable = menu_unavailable_reason(app, idx).is_some();
             let style = if unavailable {
-                Style::default().fg(Color::DarkGray)
+                Style::default().fg(Color::Gray)
             } else if i == 5 || i == 6 {
                 Style::default().fg(Color::Magenta)
             } else {
@@ -1200,7 +1237,7 @@ fn render_menu(f: &mut Frame, area: Rect, app: &App) {
             if unavailable {
                 line.push(Span::styled(
                     format!("  [{}]", app.t.t("hint.unavailable")),
-                    Style::default().fg(Color::DarkGray),
+                    Style::default().fg(Color::Gray),
                 ));
             }
             ListItem::new(Line::from(line))
@@ -1288,8 +1325,8 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
 
     for stage in &app.update_stage_lines {
         lines.push(Line::from(vec![
-            Span::styled("  • ", Style::default().fg(Color::DarkGray)),
-            Span::styled(stage, Style::default().fg(Color::DarkGray)),
+            Span::styled("  • ", Style::default().fg(Color::Gray)),
+            Span::styled(stage, Style::default().fg(Color::Gray)),
         ]));
     }
     if !app.update_stage_lines.is_empty() {
@@ -1306,7 +1343,7 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
         format!("  {}", app.t.t("result.back_to_menu")),
-        Style::default().fg(Color::DarkGray),
+        Style::default().fg(Color::Gray),
     )]));
 
     let p = Paragraph::new(lines)
@@ -1370,7 +1407,7 @@ fn render_skin_selector(f: &mut Frame, area: Rect, app: &App) {
             ListItem::new(Line::from(vec![
                 Span::styled("  ", Style::default()),
                 Span::styled(name.as_str(), Style::default().fg(Color::White)),
-                Span::styled(format!(" ({key})"), Style::default().fg(Color::DarkGray)),
+                Span::styled(format!(" ({key})"), Style::default().fg(Color::Gray)),
             ]))
         })
         .collect();
@@ -1418,8 +1455,20 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD)
         } else {
-            Style::default().fg(Color::DarkGray)
+            Style::default().fg(Color::Gray)
         }
+    };
+    let actions = config_actions();
+    let action_line = |index: usize, label: String, value: String| -> Line {
+        let selected = app.config_selected == index;
+        Line::from(vec![
+            Span::styled(
+                format!("{} ", if selected { "▸" } else { " " }),
+                Style::default().fg(Color::Cyan),
+            ),
+            Span::styled(label, selected_style(selected)),
+            Span::styled(value, Style::default().fg(Color::White)),
+        ])
     };
 
     let lines = vec![
@@ -1432,7 +1481,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.current_scheme")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(
                 app.schema.display_name_lang(app.t.lang()),
@@ -1442,14 +1491,14 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.detected_engines")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(engines, Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.language_label")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(language, Style::default().fg(Color::White)),
         ]),
@@ -1460,103 +1509,70 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )]),
-        Line::from(vec![
-            Span::styled(
-                format!(
-                    "{} {}: ",
-                    if app.config_selected == 0 { "▸" } else { " " },
-                    app.t.t("config.mirror_label")
-                ),
-                selected_style(app.config_selected == 0),
-            ),
-            Span::styled(
-                if config.use_mirror {
-                    app.t.t("config.enabled")
-                } else {
-                    app.t.t("config.disabled")
-                },
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!("  {}: ", app.t.t("config.proxy_label")),
-                Style::default().fg(Color::DarkGray),
-            ),
-            Span::styled(
-                if config.proxy_enabled {
-                    &config.proxy_address
-                } else {
-                    app.t.t("config.none")
-                },
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!(
-                    "{} {}: ",
-                    if app.config_selected == 2 { "▸" } else { " " },
-                    app.t.t("config.model_patch_label")
-                ),
-                selected_style(app.config_selected == 2),
-            ),
-            Span::styled(
-                if config.model_patch_enabled {
-                    app.t.t("config.enabled")
-                } else {
-                    app.t.t("config.disabled")
-                },
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!(
-                    "{} {}: ",
-                    if app.config_selected == 3 { "▸" } else { " " },
-                    app.t.t("config.engine_sync_label")
-                ),
-                selected_style(app.config_selected == 3),
-            ),
-            Span::styled(
-                if config.engine_sync_enabled {
-                    app.t.t("config.enabled")
-                } else {
-                    app.t.t("config.disabled")
-                },
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!(
-                    "{} {}: ",
-                    if app.config_selected == 4 { "▸" } else { " " },
-                    app.t.t("config.sync_strategy_label")
-                ),
-                selected_style(app.config_selected == 4),
-            ),
-            Span::styled(
-                if config.engine_sync_use_link {
-                    app.t.t("config.sync_link")
-                } else {
-                    app.t.t("config.sync_copy")
-                },
-                Style::default().fg(Color::White),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled(
-                format!(
-                    "{} {}: ",
-                    if app.config_selected == 1 { "▸" } else { " " },
-                    app.t.t("config.language_label")
-                ),
-                selected_style(app.config_selected == 1),
-            ),
-            Span::styled(language, Style::default().fg(Color::White)),
-        ]),
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::Mirror)
+                .unwrap_or(0),
+            format!("{}: ", app.t.t("config.mirror_label")),
+            if config.use_mirror {
+                app.t.t("config.enabled").into()
+            } else {
+                app.t.t("config.disabled").into()
+            },
+        ),
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::Language)
+                .unwrap_or(1),
+            format!("{}: ", app.t.t("config.language_label")),
+            language.to_string(),
+        ),
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::ModelPatch)
+                .unwrap_or(2),
+            format!("{}: ", app.t.t("config.model_patch_label")),
+            if config.model_patch_enabled {
+                app.t.t("config.enabled").into()
+            } else {
+                app.t.t("config.disabled").into()
+            },
+        ),
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::EngineSync)
+                .unwrap_or(3),
+            format!("{}: ", app.t.t("config.engine_sync_label")),
+            if config.engine_sync_enabled {
+                app.t.t("config.enabled").into()
+            } else {
+                app.t.t("config.disabled").into()
+            },
+        ),
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::SyncStrategy)
+                .unwrap_or(4),
+            format!("{}: ", app.t.t("config.sync_strategy_label")),
+            if config.engine_sync_use_link {
+                app.t.t("config.sync_link").into()
+            } else {
+                app.t.t("config.sync_copy").into()
+            },
+        ),
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::Refresh)
+                .unwrap_or(5),
+            format!("{}: ", app.t.t("hint.refresh")),
+            app.t.t("hint.confirm").into(),
+        ),
         Line::from(""),
         Line::from(vec![Span::styled(
             format!("  {}:", app.t.t("config.status_section")),
@@ -1567,7 +1583,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.scheme_status_label")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(
                 if app.config_status_loading {
@@ -1581,7 +1597,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.dict_status_label")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(
                 if app.config_status_loading {
@@ -1595,7 +1611,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.model_status_label")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(
                 if app.config_status_loading {
@@ -1609,7 +1625,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.model_patch_status_label")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(
                 if app.config_status_loading {
@@ -1630,21 +1646,21 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.rime_dir")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(&app.rime_dir, Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
             Span::styled(
                 format!("  {}: ", app.t.t("config.config_file")),
-                Style::default().fg(Color::DarkGray),
+                Style::default().fg(Color::Gray),
             ),
             Span::styled(&app.config_path, Style::default().fg(Color::White)),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
             format!("  {}", app.t.t("config.back")),
-            Style::default().fg(Color::DarkGray),
+            Style::default().fg(Color::Gray),
         )]),
     ];
 
