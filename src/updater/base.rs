@@ -60,7 +60,23 @@ impl BaseUpdater {
                 if rec.name != remote.name {
                     return true; // 方案切换
                 }
-                rec.tag != remote.tag || rec.sha256 != remote.sha256
+                if !remote.tag.is_empty() && !rec.tag.is_empty() && rec.tag != remote.tag {
+                    return true;
+                }
+                if !remote.sha256.is_empty()
+                    && !rec.sha256.is_empty()
+                    && rec.sha256 != remote.sha256
+                {
+                    return true;
+                }
+
+                match (
+                    parse_update_time(&rec.update_time),
+                    parse_update_time(&remote.update_time),
+                ) {
+                    (Some(local_time), Some(remote_time)) => remote_time > local_time,
+                    _ => false,
+                }
             }
         }
     }
@@ -85,7 +101,7 @@ impl BaseUpdater {
                         update_time: asset.updated_at.clone().unwrap_or_default(),
                         tag: release.tag_name.clone(),
                         description: release.body.clone(),
-                        sha256: asset.sha256.clone().unwrap_or_default(),
+                        sha256: asset_sha256(asset),
                         size: asset.size,
                     });
                 }
@@ -244,5 +260,97 @@ impl BaseUpdater {
             success: false,
             message: msg.into(),
         }
+    }
+}
+
+fn parse_update_time(value: &str) -> Option<chrono::DateTime<chrono::FixedOffset>> {
+    if value.trim().is_empty() {
+        return None;
+    }
+    chrono::DateTime::parse_from_rfc3339(value).ok()
+}
+
+fn asset_sha256(asset: &GitHubAsset) -> String {
+    if let Some(sha256) = asset.sha256.as_deref() {
+        if !sha256.trim().is_empty() {
+            return sha256.trim().to_string();
+        }
+    }
+
+    asset
+        .digest
+        .as_deref()
+        .and_then(|digest| digest.strip_prefix("sha256:"))
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_record() -> UpdateRecord {
+        UpdateRecord {
+            name: "asset.zip".into(),
+            update_time: "2026-01-01T00:00:00+00:00".into(),
+            tag: "v1.0.0".into(),
+            apply_time: "2026-01-01T00:00:00+00:00".into(),
+            sha256: "abc".into(),
+        }
+    }
+
+    fn sample_info() -> UpdateInfo {
+        UpdateInfo {
+            name: "asset.zip".into(),
+            url: "https://example.invalid/asset.zip".into(),
+            update_time: "2026-01-01T00:00:00+00:00".into(),
+            tag: "v1.0.0".into(),
+            description: String::new(),
+            sha256: "abc".into(),
+            size: 1,
+        }
+    }
+
+    #[test]
+    fn needs_update_ignores_missing_remote_sha_when_tag_matches() {
+        let local = sample_record();
+        let mut remote = sample_info();
+        remote.sha256.clear();
+
+        assert!(!BaseUpdater::needs_update(Some(&local), &remote));
+    }
+
+    #[test]
+    fn needs_update_uses_remote_time_when_tag_and_sha_match() {
+        let local = sample_record();
+        let mut remote = sample_info();
+        remote.update_time = "2026-01-02T00:00:00+00:00".into();
+
+        assert!(BaseUpdater::needs_update(Some(&local), &remote));
+    }
+
+    #[test]
+    fn needs_update_detects_tag_change_without_sha() {
+        let local = sample_record();
+        let mut remote = sample_info();
+        remote.tag = "v1.1.0".into();
+        remote.sha256.clear();
+
+        assert!(BaseUpdater::needs_update(Some(&local), &remote));
+    }
+
+    #[test]
+    fn asset_sha256_reads_digest_fallback() {
+        let asset = GitHubAsset {
+            name: "asset.zip".into(),
+            browser_download_url: "https://example.invalid/asset.zip".into(),
+            updated_at: None,
+            size: 1,
+            sha256: None,
+            digest: Some("sha256:deadbeef".into()),
+        };
+
+        assert_eq!(asset_sha256(&asset), "deadbeef");
     }
 }

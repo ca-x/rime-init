@@ -17,26 +17,30 @@ impl WanxiangUpdater {
         cancel: Option<&CancelSignal>,
     ) -> Result<UpdateInfo> {
         let t = L10n::new(self.base.lang);
-        let releases = if self.base.client.use_mirror() {
-            let release = self
-                .base
-                .client
-                .fetch_cnb_release(
-                    WX_OWNER,
-                    WX_CNB_REPO,
-                    &format!("latest/{}", schema.scheme_zip()),
-                    cancel,
+        let info =
+            if self.base.client.use_mirror() {
+                self.base
+                    .client
+                    .find_latest_cnb_asset_info(
+                        WX_OWNER,
+                        WX_CNB_REPO,
+                        |name| name == schema.scheme_zip(),
+                        Some(WX_CNB_DICT_TAG),
+                        cancel,
+                    )
+                    .await
+            } else {
+                let releases = self
+                    .base
+                    .client
+                    .fetch_github_releases(schema.owner(), schema.repo(), "", cancel)
+                    .await?;
+                BaseUpdater::find_update_info(&releases, schema.scheme_zip(), None).context(
+                    format!("{}: {}", t.t("err.no_scheme_file"), schema.scheme_zip()),
                 )
-                .await?;
-            vec![release]
-        } else {
-            self.base
-                .client
-                .fetch_github_releases(schema.owner(), schema.repo(), "", cancel)
-                .await?
-        };
+            };
 
-        BaseUpdater::find_update_info(&releases, schema.scheme_zip(), None).context(format!(
+        info.context(format!(
             "{}: {}",
             t.t("err.no_scheme_file"),
             schema.scheme_zip()
@@ -189,17 +193,28 @@ impl WanxiangUpdater {
             .with_context(|| t.t("update.no_dict").to_string())?;
 
         if self.base.client.use_mirror() {
-            let tag = if dict_zip.starts_with("base") {
-                WX_CNB_DICT_TAG
-            } else {
-                "latest"
-            };
-            let release = self
+            let latest_tag = self
                 .base
                 .client
-                .fetch_cnb_release(WX_OWNER, WX_CNB_REPO, tag, cancel)
+                .fetch_cnb_latest_tag(WX_OWNER, WX_CNB_REPO, cancel)
                 .await?;
-            BaseUpdater::find_update_info(&[release], dict_zip, None)
+            let latest_release = self
+                .base
+                .client
+                .fetch_cnb_release(WX_OWNER, WX_CNB_REPO, &latest_tag, cancel)
+                .await?;
+            if let Some(info) = find_matching_release_asset(&latest_release, dict_zip) {
+                Some(info)
+            } else if latest_tag == WX_CNB_DICT_TAG {
+                None
+            } else {
+                let fallback_release = self
+                    .base
+                    .client
+                    .fetch_cnb_release(WX_OWNER, WX_CNB_REPO, WX_CNB_DICT_TAG, cancel)
+                    .await?;
+                find_matching_release_asset(&fallback_release, dict_zip)
+            }
         } else {
             let releases = self
                 .base
@@ -312,14 +327,23 @@ impl WanxiangUpdater {
     /// 检查模型更新
     pub async fn check_model_update(&self, cancel: Option<&CancelSignal>) -> Result<UpdateInfo> {
         let t = L10n::new(self.base.lang);
-        let releases = self
-            .base
-            .client
-            .fetch_github_releases(WX_OWNER, MODEL_REPO, MODEL_TAG, cancel)
-            .await?;
+        let info = if self.base.client.use_mirror() {
+            let release = self
+                .base
+                .client
+                .fetch_cnb_release(WX_OWNER, WX_CNB_REPO, "model", cancel)
+                .await?;
+            find_matching_release_asset(&release, MODEL_FILE)
+        } else {
+            let releases = self
+                .base
+                .client
+                .fetch_github_releases(WX_OWNER, MODEL_REPO, MODEL_TAG, cancel)
+                .await?;
+            BaseUpdater::find_update_info(&releases, MODEL_FILE, None)
+        };
 
-        BaseUpdater::find_update_info(&releases, MODEL_FILE, None)
-            .context(format!("{}: {MODEL_FILE}", t.t("err.no_model_file")))
+        info.context(format!("{}: {MODEL_FILE}", t.t("err.no_model_file")))
     }
 
     /// 更新模型
@@ -344,27 +368,28 @@ impl WanxiangUpdater {
         let target = self.base.rime_dir.join(MODEL_FILE);
 
         // 已有相同文件则跳过
-        if target.exists() {
-            if let Some(ref rec) = local {
-                if rec.name == MODEL_FILE
-                    && !info.sha256.is_empty()
-                    && self.base.hash_matches(&info.sha256, &target)
-                {
-                    progress(UpdateEvent {
-                        component: UpdateComponent::Model,
-                        phase: UpdatePhase::Finished,
-                        progress: 1.0,
-                        detail: t.t("update.up_to_date").into(),
-                    });
-                    return Ok(UpdateResult {
-                        component: t.t("update.model").into(),
-                        old_version: rec.tag.clone(),
-                        new_version: info.tag.clone(),
-                        success: true,
-                        message: t.t("update.up_to_date").into(),
-                    });
-                }
-            }
+        if target.exists()
+            && local.as_ref().is_some_and(|rec| rec.name == MODEL_FILE)
+            && ((!info.sha256.is_empty() && self.base.hash_matches(&info.sha256, &target))
+                || !BaseUpdater::needs_update(local.as_ref(), &info))
+        {
+            let current_tag = local
+                .as_ref()
+                .map(|rec| rec.tag.clone())
+                .unwrap_or_else(|| info.tag.clone());
+            progress(UpdateEvent {
+                component: UpdateComponent::Model,
+                phase: UpdatePhase::Finished,
+                progress: 1.0,
+                detail: t.t("update.up_to_date").into(),
+            });
+            return Ok(UpdateResult {
+                component: t.t("update.model").into(),
+                old_version: current_tag.clone(),
+                new_version: info.tag.clone(),
+                success: true,
+                message: t.t("update.up_to_date").into(),
+            });
         }
 
         // 下载
@@ -444,4 +469,8 @@ impl WanxiangUpdater {
             message: t.t("update.complete").into(),
         })
     }
+}
+
+fn find_matching_release_asset(release: &GitHubRelease, file_name: &str) -> Option<UpdateInfo> {
+    BaseUpdater::find_update_info(std::slice::from_ref(release), file_name, None)
 }

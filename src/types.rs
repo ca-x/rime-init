@@ -382,6 +382,7 @@ pub struct GitHubAsset {
     pub updated_at: Option<String>,
     pub size: i64,
     pub sha256: Option<String>,
+    pub digest: Option<String>,
 }
 
 // ── 更新状态 ──

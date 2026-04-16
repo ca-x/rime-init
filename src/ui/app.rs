@@ -14,7 +14,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Gauge, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Wrap},
     Frame, Terminal,
 };
 use std::io;
@@ -107,6 +107,12 @@ struct ResolvedUpdateContext {
     rime_dir: std::path::PathBuf,
 }
 
+#[derive(Debug, Clone)]
+enum SkinMenuTarget {
+    ThemePatch(std::path::PathBuf),
+    Fcitx5Theme,
+}
+
 impl App {
     pub fn new(manager: &Manager) -> Self {
         let lang = Lang::from_str(&manager.config.language);
@@ -141,13 +147,17 @@ impl App {
 
     /// 动态菜单项 (i18n)
     pub fn menu_items(&self) -> Vec<(&str, &str)> {
+        let skin_label = match skin_menu_target(self) {
+            Some(SkinMenuTarget::Fcitx5Theme) => self.t.t("menu.fcitx5_theme"),
+            _ => self.t.t("menu.skin_patch"),
+        };
         vec![
             ("1", self.t.t("menu.update_all")),
             ("2", self.t.t("menu.update_scheme")),
             ("3", self.t.t("menu.update_dict")),
             ("4", self.t.t("menu.update_model")),
             ("5", self.t.t("menu.model_patch")),
-            ("6", self.t.t("menu.skin_patch")),
+            ("6", skin_label),
             ("7", self.t.t("menu.switch_scheme")),
             ("8", self.t.t("menu.config")),
             ("Q", self.t.t("menu.quit")),
@@ -189,15 +199,33 @@ fn model_update_supported(schema: Schema) -> bool {
     schema.supports_model_patch()
 }
 
-fn skin_patch_target(rime_dir: &std::path::Path) -> anyhow::Result<std::path::PathBuf> {
-    if cfg!(target_os = "windows") {
-        Ok(rime_dir.join("weasel.custom.yaml"))
-    } else if cfg!(target_os = "macos") {
-        Ok(rime_dir.join("squirrel.custom.yaml"))
+fn theme_patch_target_for_platform(
+    rime_dir: &std::path::Path,
+    installed_engines: &[String],
+) -> Option<std::path::PathBuf> {
+    if cfg!(target_os = "windows") && installed_engines.iter().any(|engine| engine == "weasel") {
+        Some(rime_dir.join("weasel.custom.yaml"))
+    } else if cfg!(target_os = "macos")
+        && installed_engines.iter().any(|engine| engine == "squirrel")
+    {
+        Some(rime_dir.join("squirrel.custom.yaml"))
     } else {
-        let t = L10n::new(Lang::Zh);
-        anyhow::bail!("{}", t.t("skin.not_supported"))
+        None
     }
+}
+
+fn skin_menu_target(app: &App) -> Option<SkinMenuTarget> {
+    let installed_engines = config::detect_installed_engines();
+
+    if cfg!(target_os = "linux")
+        && crate::skin::fcitx5::builtin_themes_available()
+        && crate::skin::fcitx5::theme_supported(&installed_engines)
+    {
+        return Some(SkinMenuTarget::Fcitx5Theme);
+    }
+
+    theme_patch_target_for_platform(std::path::Path::new(&app.rime_dir), &installed_engines)
+        .map(SkinMenuTarget::ThemePatch)
 }
 
 fn resolve_update_context(
@@ -488,33 +516,28 @@ fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<()
         }
         KeyCode::Enter => {
             if let Some((key, name)) = skins.get(app.skin_selected) {
-                if cfg!(target_os = "linux")
-                    && config::detect_installed_engines().contains(&"fcitx5".into())
-                {
-                    if let Err(e) = apply_linux_fcitx_theme(key) {
-                        app.notify(format!("❌ {e}"));
-                    } else {
-                        app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                match skin_menu_target(app) {
+                    Some(SkinMenuTarget::Fcitx5Theme) => {
+                        if let Err(e) = crate::skin::fcitx5::apply_theme(key, app.t.lang()) {
+                            app.notify(format!("❌ {e}"));
+                        } else {
+                            app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                        }
                     }
-                } else {
-                    let rime_dir = std::path::Path::new(&app.rime_dir);
-                    match skin_patch_target(rime_dir) {
-                        Ok(patch) => {
-                            if let Err(e) =
-                                crate::skin::patch::write_skin_presets(&patch, &[key.as_str()])
-                            {
-                                app.notify(format!("❌ {e}"));
-                            } else if let Err(e) = crate::skin::patch::set_default_skin(&patch, key)
-                            {
-                                app.notify(format!("❌ {e}"));
-                            } else {
-                                app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
-                            }
+                    Some(SkinMenuTarget::ThemePatch(patch)) => {
+                        if let Err(e) =
+                            crate::skin::patch::write_skin_presets(&patch, &[key.as_str()])
+                        {
+                            app.notify(format!("❌ {e}"));
+                        } else if let Err(e) = crate::skin::patch::set_default_skin(&patch, key) {
+                            app.notify(format!("❌ {e}"));
+                        } else {
+                            app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
                         }
-                        Err(_) => {
-                            let msg = app.t.t("skin.not_supported").to_string();
-                            app.notify(msg);
-                        }
+                    }
+                    None => {
+                        let msg = app.t.t("skin.not_supported").to_string();
+                        app.notify(msg);
                     }
                 }
             }
@@ -773,58 +796,13 @@ fn local_status_text(
 }
 
 fn available_skin_choices(app: &App) -> Vec<(String, String)> {
-    if cfg!(target_os = "linux") && config::detect_installed_engines().contains(&"fcitx5".into()) {
-        if let Ok(entries) = std::fs::read_dir(
-            dirs::home_dir()
-                .unwrap_or_default()
-                .join(".local/share/fcitx5/themes"),
-        ) {
-            let mut values: Vec<(String, String)> = entries
-                .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.path().is_dir())
-                .map(|entry| {
-                    let name = entry.file_name().to_string_lossy().to_string();
-                    (name.clone(), name)
-                })
-                .collect();
-            values.sort_by(|a, b| a.0.cmp(&b.0));
-            if !values.is_empty() {
-                return values;
-            }
+    match skin_menu_target(app) {
+        Some(SkinMenuTarget::Fcitx5Theme) => crate::skin::fcitx5::builtin_theme_choices(),
+        Some(SkinMenuTarget::ThemePatch(_)) => {
+            crate::skin::builtin::list_available_skins(app.t.lang())
         }
+        None => Vec::new(),
     }
-    crate::skin::builtin::list_available_skins(app.t.lang())
-}
-
-fn apply_linux_fcitx_theme(theme_name: &str) -> anyhow::Result<()> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("missing home"))?;
-    let config_path = home.join(".config/fcitx5/conf/classicui.conf");
-    let mut lines = if config_path.exists() {
-        std::fs::read_to_string(&config_path)?
-            .lines()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-    } else {
-        Vec::new()
-    };
-    let mut found = false;
-    for line in &mut lines {
-        if line.starts_with("Theme=") {
-            *line = format!("Theme={theme_name}");
-            found = true;
-        }
-    }
-    if !found {
-        lines.push(format!("Theme={theme_name}"));
-    }
-    if let Some(parent) = config_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(config_path, lines.join("\n") + "\n")?;
-    let _ = std::process::Command::new("fcitx5-remote")
-        .arg("-r")
-        .status();
-    Ok(())
 }
 
 // ── 更新调度 ──
@@ -1133,6 +1111,15 @@ fn current_schema_index(schema: Schema) -> usize {
         .unwrap_or(0)
 }
 
+fn skin_menu_supported() -> bool {
+    let manager = match Manager::new() {
+        Ok(manager) => manager,
+        Err(_) => return false,
+    };
+    let app = App::new(&manager);
+    skin_menu_target(&app).is_some()
+}
+
 fn menu_unavailable_reason(app: &App, idx: usize) -> Option<String> {
     match idx {
         3 if app.schema.dict_zip().is_none() => Some(format!(
@@ -1140,7 +1127,7 @@ fn menu_unavailable_reason(app: &App, idx: usize) -> Option<String> {
             app.t.t("hint.unavailable"),
             app.t.t("update.no_dict")
         )),
-        6 if cfg!(target_os = "linux") => Some(format!(
+        6 if !skin_menu_supported() => Some(format!(
             "{}: {}",
             app.t.t("hint.unavailable"),
             app.t.t("skin.not_supported")
@@ -1153,6 +1140,7 @@ fn menu_unavailable_reason(app: &App, idx: usize) -> Option<String> {
 
 fn ui(f: &mut Frame, app: &App) {
     let size = f.area();
+    f.render_widget(Clear, size);
 
     // 主布局: header + body + footer
     let chunks = Layout::default()
@@ -1401,16 +1389,44 @@ fn render_scheme_selector(f: &mut Frame, area: Rect, app: &App) {
 
 fn render_skin_selector(f: &mut Frame, area: Rect, app: &App) {
     let skins = available_skin_choices(app);
+    let current_linux_theme = match skin_menu_target(app) {
+        Some(SkinMenuTarget::Fcitx5Theme) => crate::skin::fcitx5::current_theme().ok().flatten(),
+        _ => None,
+    };
+    let installed_linux_themes = match skin_menu_target(app) {
+        Some(SkinMenuTarget::Fcitx5Theme) => {
+            crate::skin::fcitx5::installed_theme_names().unwrap_or_default()
+        }
+        _ => std::collections::HashSet::new(),
+    };
     let items: Vec<ListItem> = skins
         .iter()
         .map(|(key, name)| {
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::styled("  ", Style::default()),
                 Span::styled(name.as_str(), Style::default().fg(Color::White)),
                 Span::styled(format!(" ({key})"), Style::default().fg(Color::Gray)),
-            ]))
+            ];
+            if installed_linux_themes.contains(key) {
+                spans.push(Span::styled(
+                    format!(" [{}]", app.t.t("skin.installed_marker")),
+                    Style::default().fg(Color::Cyan),
+                ));
+            }
+            if current_linux_theme.as_deref() == Some(key.as_str()) {
+                spans.push(Span::styled(
+                    format!(" [{}]", app.t.t("skin.current_marker")),
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+            ListItem::new(Line::from(spans))
         })
         .collect();
+
+    let title_key = match skin_menu_target(app) {
+        Some(SkinMenuTarget::Fcitx5Theme) => "skin.fcitx5_select_prompt",
+        _ => "skin.select_prompt",
+    };
 
     let list = List::new(items)
         .block(
@@ -1418,7 +1434,7 @@ fn render_skin_selector(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Magenta))
                 .title(Span::styled(
-                    format!(" {} ", app.t.t("skin.select_prompt")),
+                    format!(" {} ", app.t.t(title_key)),
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),
@@ -1681,6 +1697,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ratatui::backend::TestBackend;
 
     #[test]
     fn model_update_supported_for_all_supported_schemas() {
@@ -1692,22 +1709,22 @@ mod tests {
     }
 
     #[test]
-    fn skin_patch_target_matches_platform_convention() {
+    fn theme_patch_target_matches_platform_convention() {
         let base = std::path::Path::new("/tmp/rime");
         #[cfg(target_os = "windows")]
         assert_eq!(
-            skin_patch_target(base).unwrap(),
+            theme_patch_target_for_platform(base, &["weasel".to_string()]).unwrap(),
             base.join("weasel.custom.yaml")
         );
 
         #[cfg(target_os = "macos")]
         assert_eq!(
-            skin_patch_target(base).unwrap(),
+            theme_patch_target_for_platform(base, &["squirrel".to_string()]).unwrap(),
             base.join("squirrel.custom.yaml")
         );
 
         #[cfg(target_os = "linux")]
-        assert!(skin_patch_target(base).is_err());
+        assert!(theme_patch_target_for_platform(base, &[]).is_none());
     }
 
     #[test]
@@ -1716,12 +1733,32 @@ mod tests {
         assert_eq!(current_schema_index(Schema::Mint), Schema::all().len() - 1);
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn skin_menu_supported_matches_skin_target_resolution() {
+        let manager = Manager::new().expect("manager");
+        let app = App::new(&manager);
+        assert_eq!(skin_menu_supported(), skin_menu_target(&app).is_some());
+    }
+
     #[test]
     fn menu_unavailable_reason_blocks_dict_for_schema_without_separate_dict() {
         let manager = Manager::new().expect("manager");
         let mut app = App::new(&manager);
         app.schema = Schema::Mint;
         assert!(menu_unavailable_reason(&app, 3).is_some());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn menu_unavailable_reason_uses_runtime_skin_support() {
+        let manager = Manager::new().expect("manager");
+        let app = App::new(&manager);
+
+        assert_eq!(
+            menu_unavailable_reason(&app, 6).is_some(),
+            !skin_menu_supported()
+        );
     }
 
     #[test]
@@ -1749,5 +1786,37 @@ mod tests {
             .expect("menu key");
 
         assert!(app.should_quit);
+    }
+
+    #[test]
+    fn ui_clears_previous_screen_content_before_rendering() {
+        let manager = Manager::new().expect("manager");
+        let mut app = App::new(&manager);
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+
+        app.screen = AppScreen::Result;
+        app.update_done = true;
+        app.update_msg = "very-long-unique-result-line".into();
+        app.update_results = vec!["result-detail-marker".into()];
+        terminal.draw(|f| ui(f, &app)).expect("draw result");
+
+        app.screen = AppScreen::Menu;
+        app.update_results.clear();
+        terminal.draw(|f| ui(f, &app)).expect("draw menu");
+
+        let rendered = buffer_to_string(terminal.backend());
+        assert!(!rendered.contains("very-long-unique-result-line"));
+        assert!(!rendered.contains("result-detail-marker"));
+    }
+
+    fn buffer_to_string(backend: &TestBackend) -> String {
+        backend
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<Vec<_>>()
+            .join("")
     }
 }

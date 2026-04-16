@@ -54,6 +54,8 @@ impl L10n {
         en.insert("menu.model_patch", "Model Patch");
         zh.insert("menu.skin_patch", "皮肤 Patch");
         en.insert("menu.skin_patch", "Skin Patch");
+        zh.insert("menu.fcitx5_theme", "Fcitx5 主题");
+        en.insert("menu.fcitx5_theme", "Fcitx5 Theme");
         zh.insert("menu.switch_scheme", "切换方案");
         en.insert("menu.switch_scheme", "Switch Scheme");
         zh.insert("menu.config", "配置");
@@ -279,6 +281,14 @@ impl L10n {
             "skin.select_prompt",
             "Choose skin (Enter confirm / Esc back)",
         );
+        zh.insert(
+            "skin.fcitx5_select_prompt",
+            "选择 Fcitx5 主题 (Enter确认/Esc返回)",
+        );
+        en.insert(
+            "skin.fcitx5_select_prompt",
+            "Choose Fcitx5 theme (Enter confirm / Esc back)",
+        );
         zh.insert("skin.applied", "皮肤已设置");
         en.insert("skin.applied", "Skin applied");
         zh.insert("skin.not_supported", "当前平台不支持皮肤 Patch");
@@ -286,6 +296,10 @@ impl L10n {
             "skin.not_supported",
             "Skin patch is not supported on this platform",
         );
+        zh.insert("skin.installed_marker", "已安装");
+        en.insert("skin.installed_marker", "Installed");
+        zh.insert("skin.current_marker", "当前");
+        en.insert("skin.current_marker", "Current");
 
         // ── 方案 ──
         zh.insert("scheme.select", "选择方案");

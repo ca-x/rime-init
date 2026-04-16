@@ -1,4 +1,5 @@
 pub mod builtin;
+pub mod fcitx5;
 pub mod patch;
 
 #[allow(unused_imports)]

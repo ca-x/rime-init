@@ -15,7 +15,13 @@ impl MintUpdater {
     /// 检查方案更新（主分支归档）
     pub async fn check_scheme_update(&self, cancel: Option<&CancelSignal>) -> Result<UpdateInfo> {
         if self.base.client.use_mirror() {
-            Ok(mint_mirror_update_info())
+            let release = self
+                .base
+                .client
+                .fetch_cnb_release(MINT_OWNER, MINT_REPO, "latest", cancel)
+                .await?;
+            find_mint_release_asset(&release)
+                .ok_or_else(|| anyhow::anyhow!("mirror asset not found: {}", MINT_ARCHIVE))
         } else {
             self.base
                 .client
@@ -133,19 +139,20 @@ impl MintUpdater {
     }
 }
 
-fn mint_mirror_update_info() -> UpdateInfo {
-    UpdateInfo {
-        name: MINT_ARCHIVE.into(),
-        url: format!(
-            "{}/{}/{}/-/releases/download/latest/{}",
-            CNB_BASE, MINT_OWNER, MINT_REPO, MINT_ARCHIVE
-        ),
-        update_time: String::new(),
-        tag: "latest".into(),
-        description: format!("{}/{}@latest", MINT_OWNER, MINT_REPO),
-        sha256: String::new(),
-        size: 0,
-    }
+fn find_mint_release_asset(release: &GitHubRelease) -> Option<UpdateInfo> {
+    release
+        .assets
+        .iter()
+        .find(|asset| asset.name == MINT_ARCHIVE)
+        .map(|asset| UpdateInfo {
+            name: asset.name.clone(),
+            url: asset.browser_download_url.clone(),
+            update_time: asset.updated_at.clone().unwrap_or_default(),
+            tag: release.tag_name.clone(),
+            description: release.body.clone(),
+            sha256: asset.sha256.clone().unwrap_or_default(),
+            size: asset.size,
+        })
 }
 
 fn filter_mint_distribution(base: &Path) -> Result<()> {
@@ -250,8 +257,24 @@ mod tests {
     }
 
     #[test]
-    fn mint_mirror_update_info_points_to_latest_cnb_archive() {
-        let info = mint_mirror_update_info();
+    fn find_mint_release_asset_extracts_latest_archive() {
+        let release = GitHubRelease {
+            tag_name: "latest".into(),
+            body: "body".into(),
+            assets: vec![GitHubAsset {
+                name: MINT_ARCHIVE.into(),
+                browser_download_url:
+                    "https://cnb.cool/Mintimate/oh-my-rime/-/releases/download/latest/oh-my-rime.zip"
+                        .into(),
+                updated_at: Some("2026-04-13T11:50:14Z".into()),
+                size: 26553904,
+                sha256: Some("deadbeef".into()),
+                digest: None,
+            }],
+            published_at: None,
+        };
+
+        let info = find_mint_release_asset(&release).expect("mint asset");
 
         assert_eq!(info.name, MINT_ARCHIVE);
         assert_eq!(info.tag, "latest");
@@ -259,5 +282,6 @@ mod tests {
             info.url,
             "https://cnb.cool/Mintimate/oh-my-rime/-/releases/download/latest/oh-my-rime.zip"
         );
+        assert_eq!(info.sha256, "deadbeef");
     }
 }
