@@ -84,7 +84,7 @@ impl Schema {
             Schema::WanxiangWx => "万象拼音 Pro (万象辅助)",
             Schema::Ice => "雾凇拼音",
             Schema::Frost => "白霜拼音",
-            Schema::Mint => "Mint Input",
+            Schema::Mint => "薄荷输入法",
         }
     }
 
@@ -371,7 +371,7 @@ mod tests {
         assert_eq!(Schema::WanxiangBase.display_name(), "万象拼音 (标准版)");
         assert_eq!(Schema::Ice.display_name(), "雾凇拼音");
         assert_eq!(Schema::Frost.display_name(), "白霜拼音");
-        assert_eq!(Schema::Mint.display_name(), "Mint Input");
+        assert_eq!(Schema::Mint.display_name(), "薄荷输入法");
         assert_eq!(
             Schema::WanxiangBase.display_name_lang(Lang::En),
             "Wanxiang (Base)"
