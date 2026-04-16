@@ -403,6 +403,8 @@ impl L10n {
         en.insert("hint.confirm", "Confirm");
         zh.insert("hint.back", "返回/退出");
         en.insert("hint.back", "Back/Quit");
+        zh.insert("hint.input", "输入");
+        en.insert("hint.input", "Input");
         zh.insert("hint.wait", "处理中，请等待");
         en.insert("hint.wait", "Working, please wait");
         zh.insert("hint.cancel", "取消");
@@ -425,6 +427,32 @@ impl L10n {
         en.insert("config.mirror_label", "Mirror downloads");
         zh.insert("config.proxy_label", "代理");
         en.insert("config.proxy_label", "Proxy");
+        zh.insert("config.proxy_source_label", "代理来源");
+        en.insert("config.proxy_source_label", "Proxy source");
+        zh.insert("config.proxy_value_label", "代理地址");
+        en.insert("config.proxy_value_label", "Proxy address");
+        zh.insert("config.proxy_type_label", "代理类型");
+        en.insert("config.proxy_type_label", "Proxy type");
+        zh.insert("config.proxy_source_config", "配置文件");
+        en.insert("config.proxy_source_config", "Config");
+        zh.insert("config.proxy_source_env", "环境变量");
+        en.insert("config.proxy_source_env", "Environment");
+        zh.insert(
+            "config.proxy_env_readonly",
+            "环境变量代理仅展示，需修改环境变量本身",
+        );
+        en.insert(
+            "config.proxy_env_readonly",
+            "Environment proxy is read-only here; change the environment variable itself",
+        );
+        zh.insert("config.proxy_type_http", "HTTP");
+        en.insert("config.proxy_type_http", "HTTP");
+        zh.insert("config.proxy_type_socks5", "SOCKS5");
+        en.insert("config.proxy_type_socks5", "SOCKS5");
+        zh.insert("config.edit_title", "编辑配置");
+        en.insert("config.edit_title", "Edit config");
+        zh.insert("config.input_placeholder", "输入内容");
+        en.insert("config.input_placeholder", "Enter value");
         zh.insert("config.model_patch_label", "自动模型 Patch");
         en.insert("config.model_patch_label", "Auto model patch");
         zh.insert("config.engine_sync_label", "多引擎同步");

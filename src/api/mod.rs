@@ -6,11 +6,24 @@ use crate::types::*;
 use anyhow::Result;
 use reqwest::header::{HeaderMap, ACCEPT, AUTHORIZATION};
 use reqwest::Proxy;
+
 pub struct Client {
     pub(crate) http: reqwest::Client,
     pub(crate) github_token: String,
     use_mirror: bool,
     pub(crate) lang: Lang,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxySource {
+    Config,
+    Environment,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectiveProxy {
+    pub source: ProxySource,
+    pub url: String,
 }
 
 impl Client {
@@ -63,15 +76,8 @@ impl Client {
             .timeout(std::time::Duration::from_secs(30))
             .user_agent("snout/0.1");
 
-        if config.proxy_enabled {
-            let proxy = match config.proxy_type.as_str() {
-                "http" | "https" => Proxy::all(format!("http://{}", config.proxy_address))?,
-                "socks5" => Proxy::all(format!("socks5://{}", config.proxy_address))?,
-                _ => {
-                    eprintln!("⚠️ {}: {}", t.t("api.proxy_unknown"), config.proxy_type);
-                    return Err(anyhow::anyhow!("{}", t.t("api.proxy_unknown")));
-                }
-            };
+        if let Some(proxy_url) = resolve_proxy_url(config, &t)? {
+            let proxy = Proxy::all(proxy_url)?;
             builder = builder.proxy(proxy);
         }
 
@@ -87,12 +93,8 @@ impl Client {
         let t = L10n::new(Lang::from_str(&config.language));
         let mut builder = reqwest::Client::builder().user_agent("snout/0.1");
 
-        if config.proxy_enabled {
-            let proxy = match config.proxy_type.as_str() {
-                "http" | "https" => Proxy::all(format!("http://{}", config.proxy_address))?,
-                "socks5" => Proxy::all(format!("socks5://{}", config.proxy_address))?,
-                _ => return Err(anyhow::anyhow!("{}", t.t("api.proxy_unknown"))),
-            };
+        if let Some(proxy_url) = resolve_proxy_url(config, &t)? {
+            let proxy = Proxy::all(proxy_url)?;
             builder = builder.proxy(proxy);
         }
 
@@ -130,6 +132,74 @@ impl Client {
     pub fn use_mirror(&self) -> bool {
         self.use_mirror
     }
+}
+
+fn resolve_proxy_url(config: &Config, t: &L10n) -> Result<Option<String>> {
+    if config.proxy_enabled {
+        let proxy_url = match config.proxy_type.as_str() {
+            "http" | "https" => format!("http://{}", config.proxy_address.trim()),
+            "socks5" => format!("socks5://{}", config.proxy_address.trim()),
+            _ => {
+                eprintln!("⚠️ {}: {}", t.t("api.proxy_unknown"), config.proxy_type);
+                return Err(anyhow::anyhow!("{}", t.t("api.proxy_unknown")));
+            }
+        };
+        return Ok(Some(proxy_url));
+    }
+
+    Ok(proxy_url_from_env())
+}
+
+pub fn effective_proxy(config: &Config) -> Result<Option<EffectiveProxy>> {
+    let t = L10n::new(Lang::from_str(&config.language));
+    if config.proxy_enabled {
+        let url = resolve_proxy_url(config, &t)?.unwrap_or_default();
+        return Ok(Some(EffectiveProxy {
+            source: ProxySource::Config,
+            url,
+        }));
+    }
+
+    Ok(proxy_url_from_env().map(|url| EffectiveProxy {
+        source: ProxySource::Environment,
+        url,
+    }))
+}
+
+fn proxy_url_from_env() -> Option<String> {
+    proxy_url_from_env_with(|key| std::env::var(key).ok())
+}
+
+fn proxy_url_from_env_with(lookup: impl Fn(&str) -> Option<String>) -> Option<String> {
+    for key in [
+        "https_proxy",
+        "HTTPS_PROXY",
+        "http_proxy",
+        "HTTP_PROXY",
+        "all_proxy",
+        "ALL_PROXY",
+    ] {
+        let Some(value) = lookup(key) else {
+            continue;
+        };
+        let normalized = normalize_proxy_env_value(key, &value)?;
+        return Some(normalized);
+    }
+    None
+}
+
+fn normalize_proxy_env_value(key: &str, value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed.contains("://") {
+        return Some(trimmed.to_string());
+    }
+    if key.eq_ignore_ascii_case("all_proxy") {
+        return None;
+    }
+    Some(format!("http://{trimmed}"))
 }
 
 #[cfg(test)]
@@ -228,5 +298,59 @@ mod tests {
             headers.get(AUTHORIZATION).unwrap(),
             &"Bearer token".parse::<HeaderValue>().unwrap()
         );
+    }
+
+    #[test]
+    fn resolve_proxy_url_prefers_config_over_environment() {
+        let mut config = base_config();
+        config.proxy_enabled = true;
+        config.proxy_type = "socks5".into();
+        config.proxy_address = "127.0.0.1:1081".into();
+
+        let proxy = resolve_proxy_url(&config, &L10n::new(Lang::En)).expect("proxy");
+        assert_eq!(proxy.as_deref(), Some("socks5://127.0.0.1:1081"));
+    }
+
+    #[test]
+    fn proxy_url_from_env_uses_https_then_http() {
+        let proxy = proxy_url_from_env_with(|key| match key {
+            "https_proxy" => Some("http://secure-proxy:8443".into()),
+            "http_proxy" => Some("http://plain-proxy:8080".into()),
+            _ => None,
+        });
+
+        assert_eq!(proxy.as_deref(), Some("http://secure-proxy:8443"));
+    }
+
+    #[test]
+    fn proxy_url_from_env_adds_http_scheme_when_missing() {
+        let proxy = proxy_url_from_env_with(|key| match key {
+            "http_proxy" => Some("127.0.0.1:7890".into()),
+            _ => None,
+        });
+
+        assert_eq!(proxy.as_deref(), Some("http://127.0.0.1:7890"));
+    }
+
+    #[test]
+    fn effective_proxy_reports_environment_source_when_config_disabled() {
+        let config = base_config();
+        let proxy = proxy_url_from_env_with(|key| match key {
+            "https_proxy" => Some("http://secure-proxy:8443".into()),
+            _ => None,
+        })
+        .map(|url| EffectiveProxy {
+            source: ProxySource::Environment,
+            url,
+        });
+
+        assert_eq!(
+            proxy,
+            Some(EffectiveProxy {
+                source: ProxySource::Environment,
+                url: "http://secure-proxy:8443".into()
+            })
+        );
+        assert!(!config.proxy_enabled);
     }
 }

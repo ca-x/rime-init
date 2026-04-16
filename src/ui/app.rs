@@ -30,6 +30,7 @@ pub enum AppScreen {
     SchemeSelector,
     SkinSelector,
     ConfigView,
+    ConfigInput,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +67,8 @@ pub struct App {
     config_status_rx: Option<mpsc::Receiver<ConfigStatusSnapshot>>,
     config_status_loading: bool,
     config_status: ConfigStatusSnapshot,
+    config_input_field: Option<ConfigInputField>,
+    config_input_value: String,
     // 通知
     pub notification: Option<(String, Instant)>,
 }
@@ -93,10 +96,18 @@ struct ConfigStatusSnapshot {
 enum ConfigAction {
     Mirror,
     Language,
+    ProxyEnabled,
+    ProxyType,
+    ProxyAddress,
     ModelPatch,
     EngineSync,
     SyncStrategy,
     Refresh,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ConfigInputField {
+    ProxyAddress,
 }
 
 #[derive(Clone)]
@@ -141,6 +152,8 @@ impl App {
             config_status_rx: None,
             config_status_loading: false,
             config_status: ConfigStatusSnapshot::default(),
+            config_input_field: None,
+            config_input_value: String::new(),
             notification: None,
         }
     }
@@ -184,6 +197,12 @@ impl App {
                     self.t.t("hint.back")
                 )
             }
+            AppScreen::ConfigInput => format!(
+                "{}  Enter {}  Esc {}",
+                self.t.t("hint.input"),
+                self.t.t("hint.confirm"),
+                self.t.t("hint.back")
+            ),
             AppScreen::ConfigView => format!("Enter/Esc {}", self.t.t("hint.back")),
             AppScreen::Menu => format!(
                 "↑↓/jk {}  Enter {}  q/Esc {}",
@@ -324,6 +343,7 @@ async fn run_app(
                     AppScreen::SchemeSelector => handle_scheme_key(app, key.code, manager)?,
                     AppScreen::SkinSelector => handle_skin_key(app, key.code, manager)?,
                     AppScreen::ConfigView => handle_config_key(app, key.code),
+                    AppScreen::ConfigInput => handle_config_input_key(app, key.code),
                 }
             }
         }
@@ -552,7 +572,13 @@ fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<()
 }
 
 fn handle_config_key(app: &mut App, key: KeyCode) {
-    let actions = config_actions();
+    let config = Manager::new().map(|m| m.config).unwrap_or_default();
+    let actions = config_actions(&config);
+    let effective_proxy = crate::api::effective_proxy(&config).ok().flatten();
+    let env_proxy_active = matches!(
+        effective_proxy.as_ref().map(|proxy| proxy.source),
+        Some(crate::api::ProxySource::Environment)
+    );
     match key {
         KeyCode::Up | KeyCode::Char('k') => {
             app.config_selected = app.config_selected.saturating_sub(1);
@@ -577,6 +603,34 @@ fn handle_config_key(app: &mut App, key: KeyCode) {
                             "zh".into()
                         };
                         app.t = L10n::new(Lang::from_str(&manager.config.language));
+                    }
+                    ConfigAction::ProxyEnabled => {
+                        if env_proxy_active {
+                            app.notify(app.t.t("config.proxy_env_readonly").to_string());
+                            return;
+                        }
+                        manager.config.proxy_enabled = !manager.config.proxy_enabled
+                    }
+                    ConfigAction::ProxyType => {
+                        if env_proxy_active {
+                            app.notify(app.t.t("config.proxy_env_readonly").to_string());
+                            return;
+                        }
+                        manager.config.proxy_type = if manager.config.proxy_type == "http" {
+                            "socks5".into()
+                        } else {
+                            "http".into()
+                        };
+                    }
+                    ConfigAction::ProxyAddress => {
+                        if env_proxy_active {
+                            app.notify(app.t.t("config.proxy_env_readonly").to_string());
+                            return;
+                        }
+                        app.config_input_field = Some(ConfigInputField::ProxyAddress);
+                        app.config_input_value = manager.config.proxy_address.clone();
+                        app.screen = AppScreen::ConfigInput;
+                        return;
                     }
                     ConfigAction::ModelPatch => {
                         manager.config.model_patch_enabled = !manager.config.model_patch_enabled
@@ -611,21 +665,60 @@ fn handle_config_key(app: &mut App, key: KeyCode) {
     }
 }
 
+fn handle_config_input_key(app: &mut App, key: KeyCode) {
+    match key {
+        KeyCode::Esc => {
+            app.config_input_field = None;
+            app.config_input_value.clear();
+            app.screen = AppScreen::ConfigView;
+        }
+        KeyCode::Enter => {
+            if let Ok(mut manager) = Manager::new() {
+                if let Some(ConfigInputField::ProxyAddress) = app.config_input_field {
+                    manager.config.proxy_address = app.config_input_value.trim().to_string();
+                    let _ = manager.save();
+                    app.notify(app.t.t("config.saved").to_string());
+                }
+            }
+            app.config_input_field = None;
+            app.config_input_value.clear();
+            app.screen = AppScreen::ConfigView;
+            refresh_config_status(app);
+        }
+        KeyCode::Backspace => {
+            app.config_input_value.pop();
+        }
+        KeyCode::Char(c) => {
+            app.config_input_value.push(c);
+        }
+        _ => {}
+    }
+}
+
 fn enter_config_view(app: &mut App) {
     app.config_selected = 0;
+    app.config_input_field = None;
+    app.config_input_value.clear();
     app.screen = AppScreen::ConfigView;
     refresh_config_status(app);
 }
 
-fn config_actions() -> Vec<ConfigAction> {
-    vec![
+fn config_actions(config: &crate::types::Config) -> Vec<ConfigAction> {
+    let mut actions = vec![
         ConfigAction::Mirror,
         ConfigAction::Language,
-        ConfigAction::ModelPatch,
-        ConfigAction::EngineSync,
-        ConfigAction::SyncStrategy,
-        ConfigAction::Refresh,
-    ]
+        ConfigAction::ProxyEnabled,
+    ];
+    if config.proxy_enabled {
+        actions.push(ConfigAction::ProxyType);
+        actions.push(ConfigAction::ProxyAddress);
+    }
+    actions.extend([ConfigAction::ModelPatch, ConfigAction::EngineSync]);
+    if config.engine_sync_enabled {
+        actions.push(ConfigAction::SyncStrategy);
+    }
+    actions.push(ConfigAction::Refresh);
+    actions
 }
 
 fn refresh_config_status(app: &mut App) {
@@ -1184,6 +1277,7 @@ fn ui(f: &mut Frame, app: &App) {
         AppScreen::SchemeSelector => render_scheme_selector(f, chunks[1], app),
         AppScreen::SkinSelector => render_skin_selector(f, chunks[1], app),
         AppScreen::ConfigView => render_config(f, chunks[1], app),
+        AppScreen::ConfigInput => render_config_input(f, chunks[1], app),
     }
 
     // Footer / 通知
@@ -1465,6 +1559,11 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         app.t.t("config.lang.en")
     };
     let config = manager.map(|m| m.config).unwrap_or_default();
+    let effective_proxy = crate::api::effective_proxy(&config).ok().flatten();
+    let env_proxy_active = matches!(
+        effective_proxy.as_ref().map(|proxy| proxy.source),
+        Some(crate::api::ProxySource::Environment)
+    );
     let selected_style = |selected: bool| {
         if selected {
             Style::default()
@@ -1474,7 +1573,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             Style::default().fg(Color::Gray)
         }
     };
-    let actions = config_actions();
+    let actions = config_actions(&config);
     let action_line = |index: usize, label: String, value: String| -> Line {
         let selected = app.config_selected == index;
         Line::from(vec![
@@ -1548,8 +1647,94 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         action_line(
             actions
                 .iter()
-                .position(|action| *action == ConfigAction::ModelPatch)
+                .position(|action| *action == ConfigAction::ProxyEnabled)
                 .unwrap_or(2),
+            format!("{}: ", app.t.t("config.proxy_label")),
+            if config.proxy_enabled || effective_proxy.is_some() {
+                app.t.t("config.enabled").into()
+            } else {
+                app.t.t("config.disabled").into()
+            },
+        ),
+        Line::from(vec![
+            Span::styled("   ", Style::default()),
+            Span::styled(
+                format!("{}: ", app.t.t("config.proxy_source_label")),
+                Style::default().fg(Color::Gray),
+            ),
+            Span::styled(
+                match effective_proxy.as_ref().map(|proxy| proxy.source) {
+                    Some(crate::api::ProxySource::Config) => app.t.t("config.proxy_source_config"),
+                    Some(crate::api::ProxySource::Environment) => {
+                        app.t.t("config.proxy_source_env")
+                    }
+                    None => app.t.t("config.none"),
+                },
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("   ", Style::default()),
+            Span::styled(
+                format!("{}: ", app.t.t("config.proxy_value_label")),
+                Style::default().fg(Color::Gray),
+            ),
+            Span::styled(
+                effective_proxy
+                    .as_ref()
+                    .map(|proxy| proxy.url.as_str())
+                    .unwrap_or_else(|| app.t.t("config.none")),
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        if config.proxy_enabled {
+            action_line(
+                actions
+                    .iter()
+                    .position(|action| *action == ConfigAction::ProxyType)
+                    .unwrap_or(3),
+                format!("{}: ", app.t.t("config.proxy_type_label")),
+                if config.proxy_type == "http" {
+                    app.t.t("config.proxy_type_http").into()
+                } else {
+                    app.t.t("config.proxy_type_socks5").into()
+                },
+            )
+        } else {
+            Line::from("")
+        },
+        if config.proxy_enabled {
+            action_line(
+                actions
+                    .iter()
+                    .position(|action| *action == ConfigAction::ProxyAddress)
+                    .unwrap_or(4),
+                format!("{}: ", app.t.t("config.proxy_address_label")),
+                if config.proxy_address.trim().is_empty() {
+                    app.t.t("config.none").into()
+                } else {
+                    config.proxy_address.clone()
+                },
+            )
+        } else {
+            Line::from("")
+        },
+        if env_proxy_active {
+            Line::from(vec![
+                Span::styled("   ", Style::default()),
+                Span::styled(
+                    app.t.t("config.proxy_env_readonly"),
+                    Style::default().fg(Color::Gray),
+                ),
+            ])
+        } else {
+            Line::from("")
+        },
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::ModelPatch)
+                .unwrap_or(5),
             format!("{}: ", app.t.t("config.model_patch_label")),
             if config.model_patch_enabled {
                 app.t.t("config.enabled").into()
@@ -1561,7 +1746,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             actions
                 .iter()
                 .position(|action| *action == ConfigAction::EngineSync)
-                .unwrap_or(3),
+                .unwrap_or(6),
             format!("{}: ", app.t.t("config.engine_sync_label")),
             if config.engine_sync_enabled {
                 app.t.t("config.enabled").into()
@@ -1573,7 +1758,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             actions
                 .iter()
                 .position(|action| *action == ConfigAction::SyncStrategy)
-                .unwrap_or(4),
+                .unwrap_or(7),
             format!("{}: ", app.t.t("config.sync_strategy_label")),
             if config.engine_sync_use_link {
                 app.t.t("config.sync_link").into()
@@ -1585,7 +1770,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             actions
                 .iter()
                 .position(|action| *action == ConfigAction::Refresh)
-                .unwrap_or(5),
+                .unwrap_or(8),
             format!("{}: ", app.t.t("hint.refresh")),
             app.t.t("hint.confirm").into(),
         ),
@@ -1686,6 +1871,43 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             .border_style(Style::default().fg(Color::Blue))
             .title(Span::styled(
                 format!(" {} ", app.t.t("config.title")),
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            )),
+    );
+    f.render_widget(p, area);
+}
+
+fn render_config_input(f: &mut Frame, area: Rect, app: &App) {
+    let title = match app.config_input_field {
+        Some(ConfigInputField::ProxyAddress) => app.t.t("config.proxy_address_label"),
+        None => app.t.t("config.title"),
+    };
+    let text = vec![
+        Line::from(vec![Span::styled(
+            format!("{}:", title),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            if app.config_input_value.is_empty() {
+                app.t.t("config.input_placeholder")
+            } else {
+                &app.config_input_value
+            },
+            Style::default().fg(Color::White),
+        )]),
+    ];
+
+    let p = Paragraph::new(text).wrap(Wrap { trim: false }).block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Cyan))
+            .title(Span::styled(
+                format!(" {} ", app.t.t("config.edit_title")),
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
