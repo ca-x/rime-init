@@ -616,7 +616,7 @@ fn render_menu(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::DarkGray))
                 .title(Span::styled(
-                    " 主菜单 ",
+                    format!(" {} ", app.t.t("menu.title")),
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),
@@ -664,9 +664,9 @@ fn render_updating(f: &mut Frame, area: Rect, app: &App) {
 
 fn render_result(f: &mut Frame, area: Rect, app: &App) {
     let title = if app.update_done {
-        " 完成 "
+        format!(" {} ", app.t.t("menu.done"))
     } else {
-        " 结果 "
+        format!(" {} ", app.t.t("menu.result"))
     };
 
     let mut lines = vec![
@@ -691,7 +691,7 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
 
     lines.push(Line::from(""));
     lines.push(Line::from(vec![Span::styled(
-        "  按 Enter 返回主菜单",
+        format!("  {}", app.t.t("result.back_to_menu")),
         Style::default().fg(Color::DarkGray),
     )]));
 
@@ -700,7 +700,7 @@ fn render_result(f: &mut Frame, area: Rect, app: &App) {
             Block::default()
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Green))
-                .title(Span::styled(title, Style::default().fg(Color::Green))),
+                .title(Span::styled(&title, Style::default().fg(Color::Green))),
         )
         .wrap(Wrap { trim: true });
     f.render_widget(p, area);
@@ -730,7 +730,7 @@ fn render_scheme_selector(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Cyan))
                 .title(Span::styled(
-                    " 选择方案 (Enter确认/Esc返回) ",
+                    format!(" {} ", app.t.t("scheme.select_prompt")),
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),
@@ -767,7 +767,7 @@ fn render_skin_selector(f: &mut Frame, area: Rect, app: &App) {
                 .borders(Borders::ALL)
                 .border_style(Style::default().fg(Color::Magenta))
                 .title(Span::styled(
-                    " 选择皮肤 (Enter确认/Esc返回) ",
+                    format!(" {} ", app.t.t("skin.select_prompt")),
                     Style::default()
                         .fg(Color::White)
                         .add_modifier(Modifier::BOLD),

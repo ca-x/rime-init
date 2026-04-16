@@ -38,6 +38,10 @@ impl L10n {
         // ── 菜单 ──
         zh.insert("menu.title", "主菜单");
         en.insert("menu.title", "Main Menu");
+        zh.insert("menu.done", "完成");
+        en.insert("menu.done", "Done");
+        zh.insert("menu.result", "结果");
+        en.insert("menu.result", "Result");
         zh.insert("menu.update_all", "一键更新");
         en.insert("menu.update_all", "Update All");
         zh.insert("menu.update_scheme", "更新方案");
@@ -179,6 +183,11 @@ impl L10n {
         // ── 皮肤 ──
         zh.insert("skin.select", "选择皮肤");
         en.insert("skin.select", "Select skin");
+        zh.insert("skin.select_prompt", "选择皮肤 (Enter确认/Esc返回)");
+        en.insert(
+            "skin.select_prompt",
+            "Choose skin (Enter confirm / Esc back)",
+        );
         zh.insert("skin.applied", "皮肤已设置");
         en.insert("skin.applied", "Skin applied");
         zh.insert("skin.not_supported", "当前平台不支持皮肤 Patch");
@@ -190,6 +199,11 @@ impl L10n {
         // ── 方案 ──
         zh.insert("scheme.select", "选择方案");
         en.insert("scheme.select", "Select scheme");
+        zh.insert("scheme.select_prompt", "选择方案 (Enter确认/Esc返回)");
+        en.insert(
+            "scheme.select_prompt",
+            "Choose scheme (Enter confirm / Esc back)",
+        );
         zh.insert("scheme.switched", "方案已切换");
         en.insert("scheme.switched", "Scheme switched");
 
@@ -246,6 +260,8 @@ impl L10n {
         en.insert("config.title", "Config Info");
         zh.insert("config.back", "按 Esc 返回");
         en.insert("config.back", "Press Esc to return");
+        zh.insert("result.back_to_menu", "按 Enter 返回主菜单");
+        en.insert("result.back_to_menu", "Press Enter to return to menu");
 
         Self { lang, zh, en }
     }
