@@ -14,18 +14,7 @@ impl MintUpdater {
     /// 检查方案更新（主分支归档）
     pub async fn check_scheme_update(&self) -> Result<UpdateInfo> {
         if self.base.client.use_mirror() {
-            Ok(UpdateInfo {
-                name: MINT_ARCHIVE.into(),
-                url: format!(
-                    "{}/{}/{}/-/releases/download/latest/{}",
-                    CNB_BASE, MINT_OWNER, MINT_REPO, MINT_ARCHIVE
-                ),
-                update_time: String::new(),
-                tag: "latest".into(),
-                description: format!("{}/{}@latest", MINT_OWNER, MINT_REPO),
-                sha256: String::new(),
-                size: 0,
-            })
+            Ok(mint_mirror_update_info())
         } else {
             self.base
                 .client
@@ -98,6 +87,21 @@ impl MintUpdater {
             success: true,
             message: t.t("update.complete").into(),
         })
+    }
+}
+
+fn mint_mirror_update_info() -> UpdateInfo {
+    UpdateInfo {
+        name: MINT_ARCHIVE.into(),
+        url: format!(
+            "{}/{}/{}/-/releases/download/latest/{}",
+            CNB_BASE, MINT_OWNER, MINT_REPO, MINT_ARCHIVE
+        ),
+        update_time: String::new(),
+        tag: "latest".into(),
+        description: format!("{}/{}@latest", MINT_OWNER, MINT_REPO),
+        sha256: String::new(),
+        size: 0,
     }
 }
 
@@ -175,7 +179,11 @@ mod tests {
         let dir = temp_dir("mint-filter");
         std::fs::write(dir.join("default.yaml"), "").expect("write default");
         std::fs::write(dir.join("rime_mint.schema.yaml"), "").expect("write schema");
+        std::fs::write(dir.join("weasel.yaml"), "").expect("write weasel");
+        std::fs::write(dir.join("squirrel.yaml"), "").expect("write squirrel");
         std::fs::create_dir_all(dir.join("dicts")).expect("create dicts");
+        std::fs::create_dir_all(dir.join("lua")).expect("create lua");
+        std::fs::create_dir_all(dir.join("opencc")).expect("create opencc");
         std::fs::create_dir_all(dir.join("plum")).expect("create plum");
         std::fs::create_dir_all(dir.join(".github")).expect("create github");
         std::fs::write(dir.join("README.md"), "").expect("write readme");
@@ -185,10 +193,26 @@ mod tests {
         assert!(dir.join("default.yaml").exists());
         assert!(dir.join("rime_mint.schema.yaml").exists());
         assert!(dir.join("dicts").exists());
+        assert!(dir.join("lua").exists());
+        assert!(dir.join("opencc").exists());
+        assert!(dir.join("weasel.yaml").exists());
+        assert!(dir.join("squirrel.yaml").exists());
         assert!(!dir.join("plum").exists());
         assert!(!dir.join(".github").exists());
         assert!(!dir.join("README.md").exists());
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn mint_mirror_update_info_points_to_latest_cnb_archive() {
+        let info = mint_mirror_update_info();
+
+        assert_eq!(info.name, MINT_ARCHIVE);
+        assert_eq!(info.tag, "latest");
+        assert_eq!(
+            info.url,
+            "https://cnb.cool/Mintimate/oh-my-rime/-/releases/download/latest/oh-my-rime.zip"
+        );
     }
 }

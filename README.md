@@ -279,6 +279,43 @@ snout --update --proxy socks5://127.0.0.1:1080  # With proxy
 snout --lang en --update  # English interface
 ```
 
+## Supported Schemes
+
+- Wanxiang
+- Rime Ice
+- Rime Frost
+- Mint Input
+
+## Model Patch
+
+`snout` downloads `wanxiang-lts-zh-hans.gram` from `amzxyz/RIME-LMDG` and can
+write scheme-specific custom patch files for:
+
+- `wanxiang*.custom.yaml`
+- `rime_ice.custom.yaml`
+- `rime_frost.custom.yaml`
+- `rime_mint.custom.yaml`
+
+Ice, Frost, and Mint use schema-level `patch:` overrides for grammar and
+translator parameters.
+
+## Mint Scheme Notes
+
+Mint support is sourced from
+[Mintimate/oh-my-rime](https://github.com/Mintimate/oh-my-rime).
+
+When deploying Mint, `snout` keeps runtime Rime assets only, such as:
+
+- `rime_mint*.yaml`
+- `dicts/`
+- `lua/`
+- `opencc/`
+- `weasel.yaml`
+- `squirrel.yaml`
+
+Repository metadata like README files, CI config, and issue templates are not
+copied into the user Rime directory.
+
 ## License
 
 MIT
