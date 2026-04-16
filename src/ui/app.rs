@@ -1399,7 +1399,10 @@ fn render_menu(f: &mut Frame, area: Rect, app: &App) {
     f.render_stateful_widget(list, chunks[0], &mut state);
 
     let selected_idx = app.menu_selected + 1;
-    let detail = if let Some(reason) = menu_unavailable_reason(app, selected_idx) {
+    let install_message = config::rime_installation_message(app.t.lang());
+    let detail = if !install_message.is_empty() {
+        vec![Line::from(install_message)]
+    } else if let Some(reason) = menu_unavailable_reason(app, selected_idx) {
         vec![
             Line::from(vec![Span::styled(
                 app.t.t("hint.unavailable"),

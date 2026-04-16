@@ -69,6 +69,48 @@ impl Manager {
     }
 }
 
+pub fn rime_installation_message(lang: Lang) -> String {
+    let t = L10n::new(lang);
+    if !detect_installed_engines().is_empty() {
+        return String::new();
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        format!(
+            "⚠️  {}\n\n{}\n  • {}\n    - Debian/Ubuntu: sudo apt install fcitx5-rime\n    - Fedora: sudo dnf install fcitx5-rime\n    - Arch Linux: sudo pacman -S fcitx5-rime\n  • {}\n    - Debian/Ubuntu: sudo apt install ibus-rime\n    - Fedora: sudo dnf install ibus-rime\n    - Arch Linux: sudo pacman -S ibus-rime\n  • {}\n{}\n",
+            t.t("wizard.no_engine"),
+            t.t("wizard.install_one_of"),
+            t.t("wizard.install.fcitx5"),
+            "IBus + Rime - Linux",
+            "Fcitx + Rime - Linux",
+            t.t("install.hint.after_engine")
+        )
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        format!(
+            "⚠️  {}\n\n{}\n  • {}\n    brew install --cask squirrel\n  • Fcitx5 + Rime - macOS\n    brew install --cask tinypkg/tap/fcitx5-rime\n{}\n",
+            t.t("wizard.no_engine"),
+            t.t("wizard.install_one_of"),
+            t.t("wizard.install.squirrel"),
+            t.t("install.hint.after_engine")
+        )
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        format!(
+            "⚠️  {}\n\n{}\n  • {}\n    https://rime.im\n  • Rabbit - Windows\n    https://github.com/amorphobia/rabbit\n{}\n",
+            t.t("wizard.no_engine"),
+            t.t("wizard.install_one_of"),
+            t.t("wizard.install.weasel"),
+            t.t("install.hint.after_engine")
+        )
+    }
+}
+
 fn get_config_path() -> Result<PathBuf> {
     let t = L10n::new(Lang::Zh);
     let dir = if cfg!(target_os = "windows") {

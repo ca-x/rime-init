@@ -15,11 +15,7 @@ pub async fn run_init_wizard() -> Result<()> {
     // 1. 检测引擎
     let engines = config::detect_installed_engines();
     if engines.is_empty() {
-        println!("⚠️  {}", t.t("wizard.no_engine"));
-        println!("{}", t.t("wizard.install_one_of"));
-        println!("  • {}", t.t("wizard.install.weasel"));
-        println!("  • {}", t.t("wizard.install.squirrel"));
-        println!("  • {}", t.t("wizard.install.fcitx5"));
+        println!("{}", config::rime_installation_message(lang));
         return Ok(());
     }
     println!(

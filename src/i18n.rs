@@ -123,6 +123,14 @@ impl L10n {
         en.insert("wizard.install.squirrel", "Squirrel - macOS");
         zh.insert("wizard.install.fcitx5", "Fcitx5 + Rime - Linux");
         en.insert("wizard.install.fcitx5", "Fcitx5 + Rime - Linux");
+        zh.insert(
+            "install.hint.after_engine",
+            "提示：程序仍可运行，但需要先安装并启用至少一个 Rime 引擎才能让配置立即生效。",
+        );
+        en.insert(
+            "install.hint.after_engine",
+            "Hint: the program can still run, but you need at least one installed and enabled Rime engine before the updated config can take effect immediately.",
+        );
         zh.insert("wizard.open_tui", "运行 `snout` 打开 TUI");
         en.insert("wizard.open_tui", "Run `snout` to open TUI");
         zh.insert("wizard.downloading", "下载安装中...");
