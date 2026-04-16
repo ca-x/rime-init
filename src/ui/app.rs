@@ -1,4 +1,4 @@
-use crate::config::Manager;
+use crate::config::{self, Manager};
 use crate::i18n::{L10n, Lang};
 use crate::types::Schema;
 use crate::updater;
@@ -46,6 +46,7 @@ pub struct App {
     pub menu_selected: usize,
     pub scheme_selected: usize,
     pub skin_selected: usize,
+    pub config_selected: usize,
     pub schema: Schema,
     pub rime_dir: String,
     pub config_path: String,
@@ -62,6 +63,9 @@ pub struct App {
     result_rx: Option<mpsc::Receiver<UpdateTaskResult>>,
     update_task: Option<JoinHandle<()>>,
     cancel_signal: Option<crate::types::CancelSignal>,
+    config_status_rx: Option<mpsc::Receiver<ConfigStatusSnapshot>>,
+    config_status_loading: bool,
+    config_status: ConfigStatusSnapshot,
     // 通知
     pub notification: Option<(String, Instant)>,
 }
@@ -75,6 +79,14 @@ enum UpdateTaskError {
 #[derive(Debug)]
 struct UpdateTaskResult {
     results: Result<Vec<updater::UpdateResult>, UpdateTaskError>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ConfigStatusSnapshot {
+    scheme_status: String,
+    dict_status: String,
+    model_status: String,
+    model_patch_status: String,
 }
 
 #[derive(Clone)]
@@ -94,6 +106,7 @@ impl App {
             menu_selected: 0,
             scheme_selected: 0,
             skin_selected: 0,
+            config_selected: 0,
             schema: manager.config.schema,
             rime_dir: manager.rime_dir.display().to_string(),
             config_path: manager.config_path.display().to_string(),
@@ -109,6 +122,9 @@ impl App {
             result_rx: None,
             update_task: None,
             cancel_signal: None,
+            config_status_rx: None,
+            config_status_loading: false,
+            config_status: ConfigStatusSnapshot::default(),
             notification: None,
         }
     }
@@ -244,6 +260,17 @@ async fn run_app(
         for results in finished_results {
             finish_update(app, results);
         }
+        let mut config_snapshots = Vec::new();
+        if let Some(rx) = &app.config_status_rx {
+            while let Ok(snapshot) = rx.try_recv() {
+                config_snapshots.push(snapshot);
+            }
+        }
+        for snapshot in config_snapshots {
+            app.config_status = snapshot;
+            app.config_status_loading = false;
+            app.config_status_rx = None;
+        }
 
         terminal.draw(|f| ui(f, app))?;
 
@@ -352,7 +379,8 @@ async fn handle_menu_key(app: &mut App, key: KeyCode, manager: &Manager) -> Resu
                     app.scheme_selected = current_schema_index(app.schema);
                     app.screen = AppScreen::SchemeSelector;
                 }
-                8 => app.screen = AppScreen::ConfigView,
+                8 => enter_config_view(app),
+                9 => app.should_quit = true,
                 _ => {}
             }
         }
@@ -438,7 +466,7 @@ fn handle_scheme_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<
 }
 
 fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<()> {
-    let skins = crate::skin::builtin::list_available_skins(app.t.lang());
+    let skins = available_skin_choices(app);
     match key {
         KeyCode::Up | KeyCode::Char('k') => {
             app.skin_selected = app.skin_selected.saturating_sub(1);
@@ -450,22 +478,33 @@ fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<()
         }
         KeyCode::Enter => {
             if let Some((key, name)) = skins.get(app.skin_selected) {
-                let rime_dir = std::path::Path::new(&app.rime_dir);
-                match skin_patch_target(rime_dir) {
-                    Ok(patch) => {
-                        if let Err(e) =
-                            crate::skin::patch::write_skin_presets(&patch, &[key.as_str()])
-                        {
-                            app.notify(format!("❌ {e}"));
-                        } else if let Err(e) = crate::skin::patch::set_default_skin(&patch, key) {
-                            app.notify(format!("❌ {e}"));
-                        } else {
-                            app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
-                        }
+                if cfg!(target_os = "linux")
+                    && config::detect_installed_engines().contains(&"fcitx5".into())
+                {
+                    if let Err(e) = apply_linux_fcitx_theme(key) {
+                        app.notify(format!("❌ {e}"));
+                    } else {
+                        app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
                     }
-                    Err(_) => {
-                        let msg = app.t.t("skin.not_supported").to_string();
-                        app.notify(msg);
+                } else {
+                    let rime_dir = std::path::Path::new(&app.rime_dir);
+                    match skin_patch_target(rime_dir) {
+                        Ok(patch) => {
+                            if let Err(e) =
+                                crate::skin::patch::write_skin_presets(&patch, &[key.as_str()])
+                            {
+                                app.notify(format!("❌ {e}"));
+                            } else if let Err(e) = crate::skin::patch::set_default_skin(&patch, key)
+                            {
+                                app.notify(format!("❌ {e}"));
+                            } else {
+                                app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                            }
+                        }
+                        Err(_) => {
+                            let msg = app.t.t("skin.not_supported").to_string();
+                            app.notify(msg);
+                        }
                     }
                 }
             }
@@ -481,11 +520,274 @@ fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<()
 
 fn handle_config_key(app: &mut App, key: KeyCode) {
     match key {
-        KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.config_selected = app.config_selected.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j') => {
+            if app.config_selected < 5 {
+                app.config_selected += 1;
+            }
+        }
+        KeyCode::Left | KeyCode::Right | KeyCode::Enter => {
+            if let Ok(mut manager) = Manager::new() {
+                match app.config_selected {
+                    0 => manager.config.use_mirror = !manager.config.use_mirror,
+                    1 => {
+                        manager.config.language = if manager.config.language.starts_with("zh") {
+                            "en".into()
+                        } else {
+                            "zh".into()
+                        };
+                        app.t = L10n::new(Lang::from_str(&manager.config.language));
+                    }
+                    2 => manager.config.model_patch_enabled = !manager.config.model_patch_enabled,
+                    3 => manager.config.engine_sync_enabled = !manager.config.engine_sync_enabled,
+                    4 => manager.config.engine_sync_use_link = !manager.config.engine_sync_use_link,
+                    5 => {}
+                    _ => {}
+                }
+                let _ = manager.save();
+                if app.config_selected == 5 {
+                    refresh_config_status(app);
+                } else {
+                    refresh_config_status(app);
+                    app.notify(app.t.t("config.saved").to_string());
+                }
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
             app.screen = AppScreen::Menu;
         }
         _ => {}
     }
+}
+
+fn enter_config_view(app: &mut App) {
+    app.config_selected = 0;
+    app.screen = AppScreen::ConfigView;
+    refresh_config_status(app);
+}
+
+fn refresh_config_status(app: &mut App) {
+    app.config_status_loading = true;
+    let (tx, rx) = mpsc::channel();
+    app.config_status_rx = Some(rx);
+    let schema = app.schema;
+    let lang = app.t.lang();
+    let rime_dir = std::path::PathBuf::from(&app.rime_dir);
+    tokio::spawn(async move {
+        let snapshot = build_config_status_snapshot(schema, lang, rime_dir).await;
+        let _ = tx.send(snapshot);
+    });
+}
+
+async fn build_config_status_snapshot(
+    schema: Schema,
+    lang: Lang,
+    rime_dir: std::path::PathBuf,
+) -> ConfigStatusSnapshot {
+    let t = L10n::new(lang);
+    let manager = match Manager::new() {
+        Ok(manager) => manager,
+        Err(_) => {
+            return ConfigStatusSnapshot {
+                scheme_status: t.t("update.failed").into(),
+                dict_status: t.t("update.failed").into(),
+                model_status: t.t("update.failed").into(),
+                model_patch_status: t.t("update.failed").into(),
+            };
+        }
+    };
+
+    let scheme_local = updater::BaseUpdater::load_record(&manager.scheme_record_path());
+    let dict_local = updater::BaseUpdater::load_record(&manager.dict_record_path());
+    let model_local = updater::BaseUpdater::load_record(&manager.model_record_path());
+    let model_patch_applied = updater::model_patch::is_model_patched(&rime_dir, &schema, lang);
+
+    let base = match updater::BaseUpdater::new(
+        &manager.config,
+        manager.cache_dir.clone(),
+        manager.rime_dir.clone(),
+    ) {
+        Ok(base) => base,
+        Err(_) => {
+            return ConfigStatusSnapshot {
+                scheme_status: local_status_text(&t, scheme_local.as_ref(), None),
+                dict_status: local_status_text(&t, dict_local.as_ref(), None),
+                model_status: local_status_text(&t, model_local.as_ref(), None),
+                model_patch_status: format!(
+                    "{} / {}",
+                    if manager.config.model_patch_enabled {
+                        t.t("config.enabled")
+                    } else {
+                        t.t("config.disabled")
+                    },
+                    if model_patch_applied {
+                        t.t("patch.model.enabled")
+                    } else {
+                        t.t("patch.model.disabled")
+                    }
+                ),
+            };
+        }
+    };
+
+    let scheme_remote = if schema.is_wanxiang() {
+        updater::wanxiang::WanxiangUpdater { base }
+            .check_scheme_update(&schema, None)
+            .await
+            .ok()
+    } else if schema == Schema::Ice {
+        updater::ice::IceUpdater { base }
+            .check_scheme_update(None)
+            .await
+            .ok()
+    } else if schema == Schema::Frost {
+        updater::frost::FrostUpdater { base }
+            .check_scheme_update(None)
+            .await
+            .ok()
+    } else {
+        updater::mint::MintUpdater { base }
+            .check_scheme_update(None)
+            .await
+            .ok()
+    };
+
+    let base = updater::BaseUpdater::new(
+        &manager.config,
+        manager.cache_dir.clone(),
+        manager.rime_dir.clone(),
+    )
+    .ok();
+    let dict_remote = if let Some(base) = base {
+        if schema.is_wanxiang() {
+            updater::wanxiang::WanxiangUpdater { base }
+                .check_dict_update(&schema, None)
+                .await
+                .ok()
+        } else if schema == Schema::Ice {
+            updater::ice::IceUpdater { base }
+                .check_dict_update(None)
+                .await
+                .ok()
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let base = updater::BaseUpdater::new(
+        &manager.config,
+        manager.cache_dir.clone(),
+        manager.rime_dir.clone(),
+    )
+    .ok();
+    let model_remote = if let Some(base) = base {
+        updater::wanxiang::WanxiangUpdater { base }
+            .check_model_update(None)
+            .await
+            .ok()
+    } else {
+        None
+    };
+
+    ConfigStatusSnapshot {
+        scheme_status: local_status_text(&t, scheme_local.as_ref(), scheme_remote.as_ref()),
+        dict_status: if schema.dict_zip().is_none() {
+            t.t("config.na").into()
+        } else {
+            local_status_text(&t, dict_local.as_ref(), dict_remote.as_ref())
+        },
+        model_status: local_status_text(&t, model_local.as_ref(), model_remote.as_ref()),
+        model_patch_status: format!(
+            "{} / {}",
+            if manager.config.model_patch_enabled {
+                t.t("config.enabled")
+            } else {
+                t.t("config.disabled")
+            },
+            if model_patch_applied {
+                t.t("patch.model.enabled")
+            } else {
+                t.t("patch.model.disabled")
+            }
+        ),
+    }
+}
+
+fn local_status_text(
+    t: &L10n,
+    local: Option<&crate::types::UpdateRecord>,
+    remote: Option<&crate::types::UpdateInfo>,
+) -> String {
+    match (local, remote) {
+        (None, _) => t.t("status.not_installed").into(),
+        (Some(local), Some(remote)) => {
+            if crate::updater::BaseUpdater::needs_update(Some(local), remote) {
+                format!("{} -> {}", local.tag, remote.tag)
+            } else {
+                format!("{} ({})", local.tag, t.t("config.latest"))
+            }
+        }
+        (Some(local), None) => format!("{} ({})", local.tag, t.t("config.unknown")),
+    }
+}
+
+fn available_skin_choices(app: &App) -> Vec<(String, String)> {
+    if cfg!(target_os = "linux") && config::detect_installed_engines().contains(&"fcitx5".into()) {
+        if let Ok(entries) = std::fs::read_dir(
+            dirs::home_dir()
+                .unwrap_or_default()
+                .join(".local/share/fcitx5/themes"),
+        ) {
+            let mut values: Vec<(String, String)> = entries
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().is_dir())
+                .map(|entry| {
+                    let name = entry.file_name().to_string_lossy().to_string();
+                    (name.clone(), name)
+                })
+                .collect();
+            values.sort_by(|a, b| a.0.cmp(&b.0));
+            if !values.is_empty() {
+                return values;
+            }
+        }
+    }
+    crate::skin::builtin::list_available_skins(app.t.lang())
+}
+
+fn apply_linux_fcitx_theme(theme_name: &str) -> anyhow::Result<()> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("missing home"))?;
+    let config_path = home.join(".config/fcitx5/conf/classicui.conf");
+    let mut lines = if config_path.exists() {
+        std::fs::read_to_string(&config_path)?
+            .lines()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
+    let mut found = false;
+    for line in &mut lines {
+        if line.starts_with("Theme=") {
+            *line = format!("Theme={theme_name}");
+            found = true;
+        }
+    }
+    if !found {
+        lines.push(format!("Theme={theme_name}"));
+    }
+    if let Some(parent) = config_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(config_path, lines.join("\n") + "\n")?;
+    let _ = std::process::Command::new("fcitx5-remote")
+        .arg("-r")
+        .status();
+    Ok(())
 }
 
 // ── 更新调度 ──
@@ -1061,7 +1363,7 @@ fn render_scheme_selector(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn render_skin_selector(f: &mut Frame, area: Rect, app: &App) {
-    let skins = crate::skin::builtin::list_available_skins(app.t.lang());
+    let skins = available_skin_choices(app);
     let items: Vec<ListItem> = skins
         .iter()
         .map(|(key, name)| {
@@ -1110,6 +1412,16 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         app.t.t("config.lang.en")
     };
     let config = manager.map(|m| m.config).unwrap_or_default();
+    let selected_style = |selected: bool| {
+        if selected {
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        }
+    };
+
     let lines = vec![
         Line::from(vec![Span::styled(
             format!("  {}:", app.t.t("config.runtime_section")),
@@ -1150,8 +1462,12 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         )]),
         Line::from(vec![
             Span::styled(
-                format!("  {}: ", app.t.t("config.mirror_label")),
-                Style::default().fg(Color::DarkGray),
+                format!(
+                    "{} {}: ",
+                    if app.config_selected == 0 { "▸" } else { " " },
+                    app.t.t("config.mirror_label")
+                ),
+                selected_style(app.config_selected == 0),
             ),
             Span::styled(
                 if config.use_mirror {
@@ -1178,8 +1494,12 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(vec![
             Span::styled(
-                format!("  {}: ", app.t.t("config.model_patch_label")),
-                Style::default().fg(Color::DarkGray),
+                format!(
+                    "{} {}: ",
+                    if app.config_selected == 2 { "▸" } else { " " },
+                    app.t.t("config.model_patch_label")
+                ),
+                selected_style(app.config_selected == 2),
             ),
             Span::styled(
                 if config.model_patch_enabled {
@@ -1192,8 +1512,12 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(vec![
             Span::styled(
-                format!("  {}: ", app.t.t("config.engine_sync_label")),
-                Style::default().fg(Color::DarkGray),
+                format!(
+                    "{} {}: ",
+                    if app.config_selected == 3 { "▸" } else { " " },
+                    app.t.t("config.engine_sync_label")
+                ),
+                selected_style(app.config_selected == 3),
             ),
             Span::styled(
                 if config.engine_sync_enabled {
@@ -1206,14 +1530,92 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         ]),
         Line::from(vec![
             Span::styled(
-                format!("  {}: ", app.t.t("config.sync_strategy_label")),
-                Style::default().fg(Color::DarkGray),
+                format!(
+                    "{} {}: ",
+                    if app.config_selected == 4 { "▸" } else { " " },
+                    app.t.t("config.sync_strategy_label")
+                ),
+                selected_style(app.config_selected == 4),
             ),
             Span::styled(
                 if config.engine_sync_use_link {
                     app.t.t("config.sync_link")
                 } else {
                     app.t.t("config.sync_copy")
+                },
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                format!(
+                    "{} {}: ",
+                    if app.config_selected == 1 { "▸" } else { " " },
+                    app.t.t("config.language_label")
+                ),
+                selected_style(app.config_selected == 1),
+            ),
+            Span::styled(language, Style::default().fg(Color::White)),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            format!("  {}:", app.t.t("config.status_section")),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::styled(
+                format!("  {}: ", app.t.t("config.scheme_status_label")),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                if app.config_status_loading {
+                    app.t.t("config.loading")
+                } else {
+                    &app.config_status.scheme_status
+                },
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                format!("  {}: ", app.t.t("config.dict_status_label")),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                if app.config_status_loading {
+                    app.t.t("config.loading")
+                } else {
+                    &app.config_status.dict_status
+                },
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                format!("  {}: ", app.t.t("config.model_status_label")),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                if app.config_status_loading {
+                    app.t.t("config.loading")
+                } else {
+                    &app.config_status.model_status
+                },
+                Style::default().fg(Color::White),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled(
+                format!("  {}: ", app.t.t("config.model_patch_status_label")),
+                Style::default().fg(Color::DarkGray),
+            ),
+            Span::styled(
+                if app.config_status_loading {
+                    app.t.t("config.loading")
+                } else {
+                    &app.config_status.model_patch_status
                 },
                 Style::default().fg(Color::White),
             ),
@@ -1318,5 +1720,18 @@ mod tests {
 
         assert!(matches!(app.screen, AppScreen::Updating));
         assert_eq!(app.update_msg, app.t.t("update.cancelling"));
+    }
+
+    #[tokio::test]
+    async fn enter_on_quit_menu_item_exits() {
+        let manager = Manager::new().expect("manager");
+        let mut app = App::new(&manager);
+        app.menu_selected = app.menu_items().len() - 1;
+
+        handle_menu_key(&mut app, KeyCode::Enter, &manager)
+            .await
+            .expect("menu key");
+
+        assert!(app.should_quit);
     }
 }

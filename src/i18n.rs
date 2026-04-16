@@ -395,6 +395,10 @@ impl L10n {
         en.insert("hint.cancel", "Cancel");
         zh.insert("hint.unavailable", "当前不可用");
         en.insert("hint.unavailable", "Currently unavailable");
+        zh.insert("hint.toggle", "切换");
+        en.insert("hint.toggle", "Toggle");
+        zh.insert("hint.refresh", "刷新");
+        en.insert("hint.refresh", "Refresh");
 
         // ── 配置 ──
         zh.insert("config.current_scheme", "当前方案");
@@ -419,16 +423,36 @@ impl L10n {
         en.insert("config.features_section", "Enabled features");
         zh.insert("config.paths_section", "路径");
         en.insert("config.paths_section", "Paths");
+        zh.insert("config.status_section", "更新状态");
+        en.insert("config.status_section", "Update status");
+        zh.insert("config.scheme_status_label", "方案状态");
+        en.insert("config.scheme_status_label", "Scheme status");
+        zh.insert("config.dict_status_label", "词库状态");
+        en.insert("config.dict_status_label", "Dictionary status");
+        zh.insert("config.model_status_label", "模型状态");
+        en.insert("config.model_status_label", "Model status");
+        zh.insert("config.model_patch_status_label", "模型 Patch 状态");
+        en.insert("config.model_patch_status_label", "Model patch status");
         zh.insert("config.enabled", "开启");
         en.insert("config.enabled", "Enabled");
         zh.insert("config.disabled", "关闭");
         en.insert("config.disabled", "Disabled");
         zh.insert("config.none", "无");
         en.insert("config.none", "None");
+        zh.insert("config.loading", "读取中");
+        en.insert("config.loading", "Loading");
         zh.insert("config.sync_link", "软链接");
         en.insert("config.sync_link", "Symlink");
         zh.insert("config.sync_copy", "复制");
         en.insert("config.sync_copy", "Copy");
+        zh.insert("config.latest", "最新");
+        en.insert("config.latest", "Latest");
+        zh.insert("config.unknown", "未知");
+        en.insert("config.unknown", "Unknown");
+        zh.insert("config.saved", "配置已保存");
+        en.insert("config.saved", "Configuration saved");
+        zh.insert("config.na", "不适用");
+        en.insert("config.na", "N/A");
         zh.insert("config.lang.zh", "中文");
         en.insert("config.lang.zh", "Chinese");
         zh.insert("config.lang.en", "英文");
