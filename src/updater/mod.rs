@@ -141,7 +141,7 @@ pub async fn update_all(
         }
     }
 
-    // 2. 模型 (仅万象，且启用)
+    // 2. 模型 (下载万象模型，并按当前方案决定 patch 目标)
     if schema.supports_model_patch() && config.model_patch_enabled {
         progress("更新模型...", 0.70);
         let base3 = match BaseUpdater::new(config, cache_dir, rime_dir.clone()) {

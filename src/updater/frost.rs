@@ -85,5 +85,4 @@ impl FrostUpdater {
     }
 
     // 白霜词库内嵌在方案 zip 中，不需要单独更新
-    // 白霜不支持模型 patch
 }

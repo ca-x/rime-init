@@ -110,14 +110,14 @@ snout --lang en --update
 
 从 [amzxyz/RIME-LMDG](https://github.com/amzxyz/RIME-LMDG) 下载 `wanxiang-lts-zh-hans.gram`。
 
-当前支持的 patch 目标：
+当前支持的模型 patch 目标：
 
 - **万象**：写入对应 `wanxiang*.custom.yaml`
 - **雾凇**：写入 `rime_ice.custom.yaml`
 - **白霜**：写入 `rime_frost.custom.yaml`
 - **薄荷**：写入 `rime_mint.custom.yaml`
 
-其中雾凇 / 白霜 / 薄荷使用 schema 级 `patch:` 覆写方式挂接模型参数。
+其中雾凇 / 白霜 / 薄荷使用 schema 级 `patch:` 覆写方式挂接模型参数；皮肤 patch 仍只写到输入法应用配置文件（`weasel.custom.yaml` / `squirrel.custom.yaml`）。
 
 ### 薄荷方案说明
 
@@ -311,7 +311,8 @@ write scheme-specific custom patch files for:
 - `rime_mint.custom.yaml`
 
 Ice, Frost, and Mint use schema-level `patch:` overrides for grammar and
-translator parameters.
+translator parameters. Skin patching remains limited to application-specific
+config files such as `weasel.custom.yaml` and `squirrel.custom.yaml`.
 
 ## Mint Scheme Notes
 
