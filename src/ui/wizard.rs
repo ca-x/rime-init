@@ -39,7 +39,7 @@ pub async fn run_init_wizard() -> Result<()> {
     println!("{}:", t.t("wizard.select_scheme"));
     let schemas = Schema::all();
     for (i, s) in schemas.iter().enumerate() {
-        println!("  {:2}. {}", i + 1, s.display_name());
+        println!("  {:2}. {}", i + 1, s.display_name_lang(lang));
     }
     print!("\n[1]: ");
     std::io::Write::flush(&mut std::io::stdout())?;
@@ -49,7 +49,7 @@ pub async fn run_init_wizard() -> Result<()> {
     let idx: usize = input.trim().parse::<usize>().unwrap_or(1).saturating_sub(1);
     let schema = *schemas.get(idx).unwrap_or(&schemas[0]);
 
-    println!("✅ {}\n", schema.display_name());
+    println!("✅ {}\n", schema.display_name_lang(lang));
 
     // 3. 模型 patch
     let mut model_patch = false;

@@ -292,7 +292,7 @@ fn handle_scheme_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Result<
                 app.notify(format!(
                     "{}: {}",
                     app.t.t("scheme.switched"),
-                    s.display_name()
+                    s.display_name_lang(app.t.lang())
                 ));
             }
             app.screen = AppScreen::Menu;
@@ -539,7 +539,7 @@ fn ui(f: &mut Frame, app: &App) {
             ),
             Span::styled(" v0.1.0  ", Style::default().fg(Color::DarkGray)),
             Span::styled(
-                format!(" {}", app.schema.display_name()),
+                format!(" {}", app.schema.display_name_lang(app.t.lang())),
                 Style::default().fg(Color::Green),
             ),
             Span::styled("  ║", Style::default().fg(Color::Cyan)),
@@ -719,7 +719,7 @@ fn render_scheme_selector(f: &mut Frame, area: Rect, app: &App) {
             };
             ListItem::new(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(Color::Yellow)),
-                Span::styled(s.display_name(), style),
+                Span::styled(s.display_name_lang(app.t.lang()), style),
             ]))
         })
         .collect();
@@ -792,7 +792,10 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
                 format!("  {}: ", app.t.t("config.current_scheme")),
                 Style::default().fg(Color::DarkGray),
             ),
-            Span::styled(app.schema.display_name(), Style::default().fg(Color::Cyan)),
+            Span::styled(
+                app.schema.display_name_lang(app.t.lang()),
+                Style::default().fg(Color::Cyan),
+            ),
         ]),
         Line::from(vec![
             Span::styled(

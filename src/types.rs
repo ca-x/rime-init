@@ -1,3 +1,4 @@
+use crate::i18n::Lang;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -84,6 +85,28 @@ impl Schema {
             Schema::Ice => "雾凇拼音",
             Schema::Frost => "白霜拼音",
             Schema::Mint => "Mint Input",
+        }
+    }
+
+    /// 多语言显示名称
+    pub fn display_name_lang(&self, lang: Lang) -> &'static str {
+        match lang {
+            Lang::Zh => self.display_name(),
+            Lang::En => match self {
+                Schema::WanxiangBase => "Wanxiang (Base)",
+                Schema::WanxiangMoqi => "Wanxiang Pro (Moqi)",
+                Schema::WanxiangFlypy => "Wanxiang Pro (Flypy)",
+                Schema::WanxiangZrm => "Wanxiang Pro (Ziranma)",
+                Schema::WanxiangTiger => "Wanxiang Pro (Tiger Code)",
+                Schema::WanxiangWubi => "Wanxiang Pro (Wubi)",
+                Schema::WanxiangHanxin => "Wanxiang Pro (Hanxin)",
+                Schema::WanxiangShouyou => "Wanxiang Pro (Shouyou)",
+                Schema::WanxiangShyplus => "Wanxiang Pro (Shouyou+)",
+                Schema::WanxiangWx => "Wanxiang Pro (Wanxiang)",
+                Schema::Ice => "Rime Ice",
+                Schema::Frost => "Rime Frost",
+                Schema::Mint => "Mint Input",
+            },
         }
     }
 
@@ -349,6 +372,13 @@ mod tests {
         assert_eq!(Schema::Ice.display_name(), "雾凇拼音");
         assert_eq!(Schema::Frost.display_name(), "白霜拼音");
         assert_eq!(Schema::Mint.display_name(), "Mint Input");
+        assert_eq!(
+            Schema::WanxiangBase.display_name_lang(Lang::En),
+            "Wanxiang (Base)"
+        );
+        assert_eq!(Schema::Ice.display_name_lang(Lang::En), "Rime Ice");
+        assert_eq!(Schema::Frost.display_name_lang(Lang::En), "Rime Frost");
+        assert_eq!(Schema::Mint.display_name_lang(Lang::En), "Mint Input");
     }
 
     #[test]
