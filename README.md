@@ -34,8 +34,11 @@ cargo build --release
 ### Arch Linux (AUR)
 
 ```bash
-# binary package
+# AUR binary package (x86_64 / aarch64)
 yay -S snout-bin
+
+# or
+paru -S snout-bin
 ```
 
 ## 使用
@@ -149,7 +152,7 @@ snout --lang en --update
 
 ```
 ╔══════════════════════════════════════╗
-║  snout v0.1.0  万象拼音 (标准版)  ║
+║  snout v0.1.1  万象拼音 (标准版)  ║
 ╚══════════════════════════════════════╝
 
   1. 一键更新

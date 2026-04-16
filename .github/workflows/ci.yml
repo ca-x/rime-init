@@ -56,12 +56,17 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release
+      - run: cargo build --release --target x86_64-unknown-linux-musl
       - uses: actions/upload-artifact@v4
         with:
           name: snout-linux-x86_64
-          path: target/release/snout
+          path: target/x86_64-unknown-linux-musl/release/snout
 
   build-linux-arm64:
     name: Build Linux aarch64
