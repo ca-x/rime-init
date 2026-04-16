@@ -4,14 +4,14 @@
 >
 > The snout of a weevil — long, precise, reaching exactly where it needs to go. Just like that, snout reaches into every component of your Rime setup.
 
-Rime 输入法初始化与更新工具，Rust 重写的 [rime-wanxiang-updater](https://github.com/ca-x/rime-wanxiang-updater)，支持 **万象**、**雾凇**、**白霜** 三大方案。
+Rime 输入法初始化与更新工具，Rust 重写的 [rime-wanxiang-updater](https://github.com/ca-x/rime-wanxiang-updater)，支持 **万象**、**雾凇**、**白霜**、**薄荷** 四大方案。
 
 ## 特性
 
 - 🔄 **一键更新**: 方案、词库、模型一键检查并更新
 - 🎨 **TUI 界面**: ratatui 终端界面，键盘操作
-- 🌐 **多方案**: 万象 (10 变体) + 雾凇 + 白霜
-- 🧠 **模型 Patch**: 自动下载并启用万象语法模型
+- 🌐 **多方案**: 万象 (10 变体) + 雾凇 + 白霜 + 薄荷
+- 🧠 **模型 Patch**: 自动下载万象语法模型，并可按方案写入对应 schema patch
 - 🎭 **皮肤 Patch**: 内置 6 个主题一键切换
 - 🌍 **中英双语**: `--lang en` / `--lang zh`
 - 🪞 **CNB 镜像**: 国内加速下载
@@ -96,10 +96,20 @@ snout --lang en --update
 | 万象拼音 Pro (墨奇/小鹤/自然码/虎码/五笔/汉心/首右) | 同上 | 双拼 + 辅助码 |
 | 雾凇拼音 | [iDvel/rime-ice](https://github.com/iDvel/rime-ice) | 16.6k ⭐ |
 | 白霜拼音 | [gaboolic/rime-frost](https://github.com/gaboolic/rime-frost) | 3.1k ⭐ |
+| 薄荷输入法 | [Mintimate/oh-my-rime](https://github.com/Mintimate/oh-my-rime) | 薄荷系配置模板与词库 |
 
-### 语法模型 (仅万象)
+### 语法模型 / 模型 Patch
 
-从 [amzxyz/RIME-LMDG](https://github.com/amzxyz/RIME-LMDG) 下载 `wanxiang-lts-zh-hans.gram`，自动 patch 到方案配置。
+从 [amzxyz/RIME-LMDG](https://github.com/amzxyz/RIME-LMDG) 下载 `wanxiang-lts-zh-hans.gram`。
+
+当前支持的 patch 目标：
+
+- **万象**：写入对应 `wanxiang*.custom.yaml`
+- **雾凇**：写入 `rime_ice.custom.yaml`
+- **白霜**：写入 `rime_frost.custom.yaml`
+- **薄荷**：写入 `rime_mint.custom.yaml`
+
+其中雾凇 / 白霜 / 薄荷使用 schema 级 `patch:` 覆写方式挂接模型参数。
 
 ## TUI 菜单
 
@@ -199,6 +209,7 @@ MIT
 - [rime_wanxiang](https://github.com/amzxyz/rime_wanxiang) - 万象拼音方案
 - [rime-ice](https://github.com/iDvel/rime-ice) - 雾凇拼音方案
 - [rime-frost](https://github.com/gaboolic/rime-frost) - 白霜拼音方案
+- [oh-my-rime](https://github.com/Mintimate/oh-my-rime) - 薄荷输入法方案
 - [RIME-LMDG](https://github.com/amzxyz/RIME-LMDG) - 语法模型
 - [ratatui](https://github.com/ratatui/ratatui) - TUI 框架
 - [reqwest](https://github.com/seanmonstar/reqwest) - HTTP 客户端
@@ -209,14 +220,14 @@ MIT
 
 > **snout** /snaʊt/ — the elongated rostrum of a weevil. Like a weevil reaching precisely into a seed, snout reaches into every component of your Rime input method: schemas, dictionaries, models, and skins.
 
-A Rime input method initialization & update tool. Rust rewrite of [rime-wanxiang-updater](https://github.com/ca-x/rime-wanxiang-updater), supporting **Wanxiang**, **Rime Ice**, and **Rime Frost** schemas.
+A Rime input method initialization & update tool. Rust rewrite of [rime-wanxiang-updater](https://github.com/ca-x/rime-wanxiang-updater), supporting **Wanxiang**, **Rime Ice**, **Rime Frost**, and **Mint Input** schemas.
 
 ## Features
 
 - 🔄 **One-click update**: Schemas, dictionaries, and language models in one command
 - 🎨 **TUI**: Interactive terminal UI powered by ratatui
-- 🌐 **Multi-schema**: Wanxiang (10 variants) + Rime Ice + Rime Frost
-- 🧠 **Model patch**: Auto-download and enable Wanxiang grammar model
+- 🌐 **Multi-schema**: Wanxiang (10 variants) + Rime Ice + Rime Frost + Mint Input
+- 🧠 **Model patch**: Auto-download Wanxiang grammar models and write schema-specific patch files
 - 🎭 **Skin patch**: 6 built-in themes, one-click apply
 - 🌍 **i18n**: Chinese and English (`--lang en`)
 - 🪞 **CNB mirror**: Faster downloads in China

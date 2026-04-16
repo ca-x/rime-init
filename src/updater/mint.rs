@@ -13,10 +13,25 @@ pub struct MintUpdater {
 impl MintUpdater {
     /// 检查方案更新（主分支归档）
     pub async fn check_scheme_update(&self) -> Result<UpdateInfo> {
-        self.base
-            .client
-            .fetch_github_branch_archive(MINT_OWNER, MINT_REPO, MINT_BRANCH, MINT_ARCHIVE)
-            .await
+        if self.base.client.use_mirror() {
+            Ok(UpdateInfo {
+                name: MINT_ARCHIVE.into(),
+                url: format!(
+                    "{}/{}/{}/-/releases/download/latest/{}",
+                    CNB_BASE, MINT_OWNER, MINT_REPO, MINT_ARCHIVE
+                ),
+                update_time: String::new(),
+                tag: "latest".into(),
+                description: format!("{}/{}@latest", MINT_OWNER, MINT_REPO),
+                sha256: String::new(),
+                size: 0,
+            })
+        } else {
+            self.base
+                .client
+                .fetch_github_branch_archive(MINT_OWNER, MINT_REPO, MINT_BRANCH, MINT_ARCHIVE)
+                .await
+        }
     }
 
     /// 更新方案
