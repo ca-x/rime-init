@@ -74,9 +74,10 @@ snout --model
 # 更新模型并启用 patch
 snout --model --patch-model
 
-# 先切到薄荷方案，再更新薄荷
+# 首次初始化时可直接选择薄荷方案
 snout --init
-# 或在配置里将 schema 设为 Mint 后执行
+
+# 或者先在配置 / TUI 中把当前方案切到 Mint，再执行：
 snout --scheme
 ```
 

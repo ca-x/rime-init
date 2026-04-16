@@ -389,6 +389,11 @@ mod tests {
     }
 
     #[test]
+    fn test_schema_all_includes_mint() {
+        assert!(Schema::all().contains(&Schema::Mint));
+    }
+
+    #[test]
     fn test_schema_is_wanxiang() {
         assert!(Schema::WanxiangBase.is_wanxiang());
         assert!(Schema::WanxiangMoqi.is_wanxiang());
