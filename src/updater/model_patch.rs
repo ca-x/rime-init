@@ -233,10 +233,15 @@ mod tests {
         patch_model(&dir, &Schema::Frost).expect("patch frost model");
         assert!(is_model_patched(&dir, &Schema::Frost));
 
+        patch_model(&dir, &Schema::Mint).expect("patch mint model");
+        assert!(is_model_patched(&dir, &Schema::Mint));
+
         unpatch_model(&dir, &Schema::Ice).expect("unpatch ice model");
         unpatch_model(&dir, &Schema::Frost).expect("unpatch frost model");
+        unpatch_model(&dir, &Schema::Mint).expect("unpatch mint model");
         assert!(!is_model_patched(&dir, &Schema::Ice));
         assert!(!is_model_patched(&dir, &Schema::Frost));
+        assert!(!is_model_patched(&dir, &Schema::Mint));
 
         std::fs::remove_dir_all(&dir).ok();
     }

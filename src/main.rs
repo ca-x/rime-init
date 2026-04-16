@@ -9,6 +9,7 @@ mod ui;
 mod updater;
 
 use clap::Parser;
+use i18n::{L10n, Lang};
 use types::Schema;
 
 #[derive(Parser, Debug)]
@@ -79,6 +80,7 @@ async fn main() -> anyhow::Result<()> {
         if let Some(ref lang) = cli.lang {
             manager.config.language = lang.clone();
         }
+        let t = L10n::new(Lang::from_str(&manager.config.language));
 
         let schema = manager.config.schema;
         let cache_dir = manager.cache_dir.clone();
@@ -143,11 +145,11 @@ async fn main() -> anyhow::Result<()> {
                 }
                 println!();
             } else {
-                eprintln!("此方案无独立词库");
+                eprintln!("{}", t.t("update.no_dict"));
             }
         } else if cli.model {
             if !schema.supports_model_patch() {
-                eprintln!("此方案不支持模型更新");
+                eprintln!("{}", t.t("update.model_not_supported"));
                 std::process::exit(1);
             } else {
                 let base = updater::BaseUpdater::new(&manager.config, cache_dir, rime_dir.clone())?;
