@@ -788,43 +788,52 @@ fn render_skin_selector(f: &mut Frame, area: Rect, app: &App) {
 fn render_config(f: &mut Frame, area: Rect, app: &App) {
     let lines = vec![
         Line::from(vec![
-            Span::styled("  当前方案: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("  {}: ", app.t.t("config.current_scheme")),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(app.schema.display_name(), Style::default().fg(Color::Cyan)),
         ]),
         Line::from(vec![
-            Span::styled("  Rime 目录: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("  {}: ", app.t.t("config.rime_dir")),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(&app.rime_dir, Style::default().fg(Color::White)),
         ]),
         Line::from(vec![
-            Span::styled("  配置文件: ", Style::default().fg(Color::DarkGray)),
+            Span::styled(
+                format!("  {}: ", app.t.t("config.config_file")),
+                Style::default().fg(Color::DarkGray),
+            ),
             Span::styled(&app.config_path, Style::default().fg(Color::White)),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "  支持方案:",
+            format!("  {}:", app.t.t("config.supported_schemes")),
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
         )]),
         Line::from(vec![Span::styled(
-            "  • 万象拼音: amzxyz/rime_wanxiang",
+            format!("  • {}", app.t.t("config.scheme.wanxiang")),
             Style::default().fg(Color::White),
         )]),
         Line::from(vec![Span::styled(
-            "  • 雾凇拼音: iDvel/rime-ice",
+            format!("  • {}", app.t.t("config.scheme.ice")),
             Style::default().fg(Color::White),
         )]),
         Line::from(vec![Span::styled(
-            "  • 白霜拼音: gaboolic/rime-frost",
+            format!("  • {}", app.t.t("config.scheme.frost")),
             Style::default().fg(Color::White),
         )]),
         Line::from(vec![Span::styled(
-            "  • Mint Input: Mintimate/oh-my-rime",
+            format!("  • {}", app.t.t("config.scheme.mint")),
             Style::default().fg(Color::White),
         )]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "  按 Esc 返回",
+            format!("  {}", app.t.t("config.back")),
             Style::default().fg(Color::DarkGray),
         )]),
     ];
@@ -834,7 +843,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             .borders(Borders::ALL)
             .border_style(Style::default().fg(Color::Blue))
             .title(Span::styled(
-                " 配置信息 ",
+                format!(" {} ", app.t.t("config.title")),
                 Style::default()
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),

@@ -232,6 +232,20 @@ impl L10n {
         en.insert("config.rime_dir", "Rime directory");
         zh.insert("config.config_file", "配置文件");
         en.insert("config.config_file", "Config file");
+        zh.insert("config.supported_schemes", "支持方案");
+        en.insert("config.supported_schemes", "Supported schemes");
+        zh.insert("config.scheme.wanxiang", "万象拼音: amzxyz/rime_wanxiang");
+        en.insert("config.scheme.wanxiang", "Wanxiang: amzxyz/rime_wanxiang");
+        zh.insert("config.scheme.ice", "雾凇拼音: iDvel/rime-ice");
+        en.insert("config.scheme.ice", "Rime Ice: iDvel/rime-ice");
+        zh.insert("config.scheme.frost", "白霜拼音: gaboolic/rime-frost");
+        en.insert("config.scheme.frost", "Rime Frost: gaboolic/rime-frost");
+        zh.insert("config.scheme.mint", "薄荷输入法: Mintimate/oh-my-rime");
+        en.insert("config.scheme.mint", "Mint Input: Mintimate/oh-my-rime");
+        zh.insert("config.title", "配置信息");
+        en.insert("config.title", "Config Info");
+        zh.insert("config.back", "按 Esc 返回");
+        en.insert("config.back", "Press Esc to return");
 
         Self { lang, zh, en }
     }
