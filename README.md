@@ -106,6 +106,16 @@ snout --lang en --update
 | 白霜拼音 | [gaboolic/rime-frost](https://github.com/gaboolic/rime-frost) | 3.1k ⭐ |
 | 薄荷输入法 | [Mintimate/oh-my-rime](https://github.com/Mintimate/oh-my-rime) | 薄荷系配置模板与词库 |
 
+### 功能支持矩阵
+
+| 能力 | 万象 | 雾凇 | 白霜 | 薄荷 |
+|------|------|------|------|------|
+| 方案更新 | ✅ | ✅ | ✅ | ✅ |
+| 独立词库更新 | ✅ | ✅ | ❌ | ❌ |
+| 万象模型下载 | ✅ | ✅ | ✅ | ✅ |
+| 模型 patch 目标 | `wanxiang*.custom.yaml` | `rime_ice.custom.yaml` | `rime_frost.custom.yaml` | `rime_mint.custom.yaml` |
+| 皮肤 patch | Windows / macOS | Windows / macOS | Windows / macOS | Windows / macOS |
+
 ### 语法模型 / 模型 Patch
 
 从 [amzxyz/RIME-LMDG](https://github.com/amzxyz/RIME-LMDG) 下载 `wanxiang-lts-zh-hans.gram`。

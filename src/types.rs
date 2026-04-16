@@ -372,6 +372,12 @@ mod tests {
         assert_eq!(Schema::Ice.display_name(), "雾凇拼音");
         assert_eq!(Schema::Frost.display_name(), "白霜拼音");
         assert_eq!(Schema::Mint.display_name(), "薄荷输入法");
+        assert_eq!(
+            Schema::WanxiangBase.display_name_lang(Lang::Zh),
+            "万象拼音 (标准版)"
+        );
+        assert_eq!(Schema::Ice.display_name_lang(Lang::Zh), "雾凇拼音");
+        assert_eq!(Schema::Frost.display_name_lang(Lang::Zh), "白霜拼音");
         assert_eq!(Schema::Mint.display_name_lang(Lang::Zh), "薄荷输入法");
         assert_eq!(
             Schema::WanxiangBase.display_name_lang(Lang::En),
