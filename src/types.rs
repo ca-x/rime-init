@@ -288,6 +288,7 @@ impl Engine {
 pub struct Config {
     pub schema: Schema,
     pub use_mirror: bool,
+    pub download_threads: usize,
     pub github_token: String,
     pub proxy_enabled: bool,
     pub proxy_type: String,    // "socks5" | "http"
@@ -309,6 +310,7 @@ impl Default for Config {
         Self {
             schema: Schema::WanxiangBase,
             use_mirror: false,
+            download_threads: 4,
             github_token: String::new(),
             proxy_enabled: false,
             proxy_type: "socks5".into(),
@@ -561,6 +563,7 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.schema, Schema::WanxiangBase);
         assert!(!config.use_mirror);
+        assert_eq!(config.download_threads, 4);
         assert!(!config.proxy_enabled);
         assert!(!config.model_patch_enabled);
         assert_eq!(config.language, "zh");

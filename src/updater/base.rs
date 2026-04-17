@@ -211,7 +211,7 @@ impl BaseUpdater {
         });
         let dl_client = Client::new_download_client(config)?;
         dl_client
-            .download_file(&info.url, zip_path, cancel, |downloaded, total| {
+            .download_file(&info.url, zip_path, config, cancel, |downloaded, total| {
                 if let Some(t) = total {
                     let pct = 0.15 + (downloaded as f64 / t as f64) * 0.55;
                     progress(UpdateEvent {

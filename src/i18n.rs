@@ -524,6 +524,8 @@ impl L10n {
         en.insert("config.language_label", "Language");
         zh.insert("config.mirror_label", "镜像下载");
         en.insert("config.mirror_label", "Mirror downloads");
+        zh.insert("config.download_threads_label", "下载线程数");
+        en.insert("config.download_threads_label", "Download threads");
         zh.insert("config.proxy_label", "代理");
         en.insert("config.proxy_label", "Proxy");
         zh.insert("config.proxy_source_label", "代理来源");
@@ -562,10 +564,20 @@ impl L10n {
             "config.input_hint_page_size",
             "Enter 1-9, or leave empty to restore the default",
         );
+        zh.insert("config.input_hint_download_threads", "输入 1-8，1 表示单线程");
+        en.insert(
+            "config.input_hint_download_threads",
+            "Enter 1-8; use 1 for single-threaded downloads",
+        );
         zh.insert("config.invalid_page_size", "候选词数量必须在 1-9 之间");
         en.insert(
             "config.invalid_page_size",
             "Candidate count must be between 1 and 9",
+        );
+        zh.insert("config.invalid_download_threads", "下载线程数必须在 1-8 之间");
+        en.insert(
+            "config.invalid_download_threads",
+            "Download thread count must be between 1 and 8",
         );
         zh.insert("config.model_patch_label", "自动模型 Patch");
         en.insert("config.model_patch_label", "Auto model patch");

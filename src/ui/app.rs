@@ -14,7 +14,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Row, Table, Tabs, Wrap},
+    widgets::{Block, Borders, Clear, Gauge, List, ListItem, Paragraph, Row, Table, Wrap},
     Frame, Terminal,
 };
 use std::io;
@@ -124,6 +124,7 @@ struct ConfigStatusSnapshot {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ConfigAction {
     Mirror,
+    DownloadThreads,
     Language,
     ProxyEnabled,
     ProxyType,
@@ -139,6 +140,7 @@ enum ConfigAction {
 enum ConfigInputField {
     ProxyAddress,
     CandidatePageSize,
+    DownloadThreads,
 }
 
 #[derive(Clone)]
@@ -961,6 +963,12 @@ fn handle_config_key(app: &mut App, key: KeyCode) {
                     .unwrap_or(ConfigAction::Refresh)
                 {
                     ConfigAction::Mirror => manager.config.use_mirror = !manager.config.use_mirror,
+                    ConfigAction::DownloadThreads => {
+                        app.config_input_field = Some(ConfigInputField::DownloadThreads);
+                        app.config_input_value = manager.config.download_threads.to_string();
+                        app.screen = AppScreen::ConfigInput;
+                        return;
+                    }
                     ConfigAction::Language => {
                         manager.config.language = if manager.config.language.starts_with("zh") {
                             "en".into()
@@ -1080,6 +1088,19 @@ fn handle_config_input_key(app: &mut App, key: KeyCode) {
                             app.notify(app.t.t("config.saved").to_string());
                         }
                     }
+                    Some(ConfigInputField::DownloadThreads) => {
+                        match app.config_input_value.trim().parse::<usize>() {
+                            Ok(value @ 1..=8) => {
+                                manager.config.download_threads = value;
+                                let _ = manager.save();
+                                app.notify(app.t.t("config.saved").to_string());
+                            }
+                            _ => {
+                                app.notify(app.t.t("config.invalid_download_threads").to_string());
+                                return;
+                            }
+                        }
+                    }
                     None => {}
                 }
             }
@@ -1109,6 +1130,7 @@ fn enter_config_view(app: &mut App) {
 fn config_actions(config: &crate::types::Config) -> Vec<ConfigAction> {
     let mut actions = vec![
         ConfigAction::Mirror,
+        ConfigAction::DownloadThreads,
         ConfigAction::Language,
         ConfigAction::ProxyEnabled,
     ];
@@ -1769,21 +1791,29 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     .block(Block::default().borders(Borders::BOTTOM));
     f.render_widget(status, chunks[0]);
 
-    let tabs = Tabs::new(vec![
-        app.t.t("menu.update_all"),
-        app.t.t("menu.update_scheme"),
-        app.t.t("menu.config"),
-    ])
-    .select(match app.screen {
-        AppScreen::Updating | AppScreen::Result => 0,
-        AppScreen::ConfigView | AppScreen::ConfigInput => 2,
-        _ => 1,
-    })
-    .style(secondary_text())
-    .highlight_style(accent_text().add_modifier(Modifier::BOLD | Modifier::UNDERLINED))
-    .divider(" ")
+    let breadcrumb = Paragraph::new(Line::from(vec![
+        Span::styled(app.t.t("menu.title"), tertiary_text()),
+        Span::styled("  /  ", tertiary_text()),
+        Span::styled(current_screen_label(app), secondary_text()),
+    ]))
+    .alignment(Alignment::Center)
     .block(panel_block(app.t.t("app.name")));
-    f.render_widget(tabs, chunks[1]);
+    f.render_widget(breadcrumb, chunks[1]);
+}
+
+fn current_screen_label(app: &App) -> &str {
+    match app.screen {
+        AppScreen::Menu => app.t.t("menu.title"),
+        AppScreen::Updating | AppScreen::Result => app.t.t("menu.update_all"),
+        AppScreen::SchemeSelector => app.t.t("menu.switch_scheme"),
+        AppScreen::SkinSelector
+        | AppScreen::ThemePatchPresetSelector
+        | AppScreen::ThemePatchDefaultSelector
+        | AppScreen::SkinRoundPrompt
+        | AppScreen::Fcitx5DarkThemeSelector
+        | AppScreen::Fcitx5LightThemeSelector => app.t.t("menu.skin_patch"),
+        AppScreen::ConfigView | AppScreen::ConfigInput => app.t.t("menu.config"),
+    }
 }
 
 fn render_notification_popup(f: &mut Frame, area: Rect, message: &str, title: &str) {
@@ -2601,8 +2631,16 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         action_line(
             actions
                 .iter()
-                .position(|action| *action == ConfigAction::Language)
+                .position(|action| *action == ConfigAction::DownloadThreads)
                 .unwrap_or(1),
+            format!("{}: ", app.t.t("config.download_threads_label")),
+            config.download_threads.to_string(),
+        ),
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::Language)
+                .unwrap_or(2),
             format!("{}: ", app.t.t("config.language_label")),
             language.to_string(),
         ),
@@ -2610,7 +2648,7 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
             actions
                 .iter()
                 .position(|action| *action == ConfigAction::ProxyEnabled)
-                .unwrap_or(2),
+                .unwrap_or(3),
             format!("{}: ", app.t.t("config.proxy_label")),
             if config.proxy_enabled || effective_proxy.is_some() {
                 app.t.t("config.enabled").into()
@@ -2819,10 +2857,12 @@ fn render_config_input(f: &mut Frame, area: Rect, app: &App) {
     let title = match app.config_input_field {
         Some(ConfigInputField::ProxyAddress) => app.t.t("config.proxy_address_label"),
         Some(ConfigInputField::CandidatePageSize) => app.t.t("config.candidate_page_size_label"),
+        Some(ConfigInputField::DownloadThreads) => app.t.t("config.download_threads_label"),
         None => app.t.t("config.title"),
     };
     let hint = match app.config_input_field {
         Some(ConfigInputField::CandidatePageSize) => app.t.t("config.input_hint_page_size"),
+        Some(ConfigInputField::DownloadThreads) => app.t.t("config.input_hint_download_threads"),
         _ => app.t.t("config.input_hint"),
     };
     let text = vec![

@@ -61,6 +61,10 @@ struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     no_mirror: bool,
 
+    /// 下载线程数 / Download thread count
+    #[arg(long)]
+    download_threads: Option<usize>,
+
     /// 代理地址 / Proxy address (socks5://host:port or http://host:port)
     #[arg(long)]
     proxy: Option<String>,
@@ -327,6 +331,9 @@ fn apply_cli_overrides(config: &mut types::Config, cli: &Cli) {
     }
     if cli.no_mirror {
         config.use_mirror = false;
+    }
+    if let Some(download_threads) = cli.download_threads {
+        config.download_threads = download_threads.clamp(1, 8);
     }
     if let Some(ref token) = cli.github_token {
         config.github_token = token.clone();

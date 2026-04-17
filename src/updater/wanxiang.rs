@@ -458,7 +458,7 @@ impl WanxiangUpdater {
         });
         let dl_client = crate::api::Client::new_download_client(config)?;
         dl_client
-            .download_file(&info.url, &target, cancel, |dl, total| {
+            .download_file(&info.url, &target, config, cancel, |dl, total| {
                 if let Some(t) = total {
                     let pct = 0.15 + (dl as f64 / t as f64) * 0.75;
                     progress(UpdateEvent {
