@@ -29,6 +29,8 @@ pub enum AppScreen {
     Result,
     SchemeSelector,
     SkinSelector,
+    ThemePatchPresetSelector,
+    ThemePatchDefaultSelector,
     SkinRoundPrompt,
     Fcitx5LightThemeSelector,
     Fcitx5DarkThemeSelector,
@@ -53,6 +55,8 @@ pub struct App {
     pub skin_round_choice: bool,
     pub fcitx5_light_selected: Option<String>,
     pub fcitx5_dark_selected: Option<String>,
+    pub theme_patch_selections: std::collections::HashSet<String>,
+    pub theme_patch_default: Option<String>,
     pub config_selected: usize,
     pub schema: Schema,
     pub rime_dir: String,
@@ -163,6 +167,8 @@ impl App {
             skin_round_choice: true,
             fcitx5_light_selected: None,
             fcitx5_dark_selected: None,
+            theme_patch_selections: std::collections::HashSet::new(),
+            theme_patch_default: None,
             config_selected: 0,
             schema: manager.config.schema,
             rime_dir: manager.rime_dir.display().to_string(),
@@ -230,6 +236,8 @@ impl App {
             AppScreen::Result => format!("Enter/Esc {}", self.t.t("hint.back")),
             AppScreen::SchemeSelector
             | AppScreen::SkinSelector
+            | AppScreen::ThemePatchPresetSelector
+            | AppScreen::ThemePatchDefaultSelector
             | AppScreen::Fcitx5LightThemeSelector
             | AppScreen::Fcitx5DarkThemeSelector => {
                 format!(
@@ -393,6 +401,12 @@ async fn run_app(
                     AppScreen::Result => handle_result_key(app, key.code),
                     AppScreen::SchemeSelector => handle_scheme_key(app, key.code, manager)?,
                     AppScreen::SkinSelector => handle_skin_key(app, key.code, manager).await?,
+                    AppScreen::ThemePatchPresetSelector => {
+                        handle_theme_patch_preset_key(app, key.code)?
+                    }
+                    AppScreen::ThemePatchDefaultSelector => {
+                        handle_theme_patch_default_key(app, key.code)?
+                    }
                     AppScreen::Fcitx5LightThemeSelector => {
                         handle_fcitx5_theme_key(app, key.code, Fcitx5ThemePhase::Light).await?
                     }
@@ -498,6 +512,13 @@ async fn handle_menu_key(app: &mut App, key: KeyCode, manager: &Manager) -> Resu
                         app.fcitx5_light_selected = selection.light;
                         app.fcitx5_dark_selected = selection.dark;
                         app.screen = AppScreen::Fcitx5DarkThemeSelector;
+                    } else if let Some(SkinMenuTarget::ThemePatch(path)) = skin_menu_target(app) {
+                        app.theme_patch_selections =
+                            crate::skin::patch::read_skin_preset_selections(&path)
+                                .unwrap_or_default();
+                        app.theme_patch_default =
+                            crate::skin::patch::read_default_skin(&path).unwrap_or(None);
+                        app.screen = AppScreen::ThemePatchPresetSelector;
                     } else {
                         app.screen = AppScreen::SkinSelector;
                     }
@@ -627,6 +648,100 @@ async fn handle_skin_key(app: &mut App, key: KeyCode, _manager: &Manager) -> Res
         _ => {}
     }
     Ok(())
+}
+
+fn handle_theme_patch_preset_key(app: &mut App, key: KeyCode) -> Result<()> {
+    let skins = available_skin_choices(app);
+    match key {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.skin_selected = app.skin_selected.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j') if app.skin_selected < skins.len().saturating_sub(1) => {
+            app.skin_selected += 1;
+        }
+        KeyCode::Char(' ') => {
+            if let Some((key, _)) = skins.get(app.skin_selected) {
+                if !app.theme_patch_selections.remove(key) {
+                    app.theme_patch_selections.insert(key.clone());
+                }
+            }
+        }
+        KeyCode::Enter => {
+            if app.theme_patch_selections.is_empty() {
+                app.notify(app.t.t("skin.theme_patch_empty").to_string());
+                return Ok(());
+            }
+            let selected = selected_theme_patch_choices(app);
+            app.skin_selected = selected
+                .iter()
+                .position(|(key, _)| app.theme_patch_default.as_deref() == Some(key.as_str()))
+                .unwrap_or(0);
+            app.screen = AppScreen::ThemePatchDefaultSelector;
+        }
+        KeyCode::Esc | KeyCode::Char('q') => app.screen = AppScreen::Menu,
+        _ => {}
+    }
+    Ok(())
+}
+
+fn handle_theme_patch_default_key(app: &mut App, key: KeyCode) -> Result<()> {
+    let selected = selected_theme_patch_choices(app);
+    match key {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.skin_selected = app.skin_selected.saturating_sub(1);
+        }
+        KeyCode::Down | KeyCode::Char('j')
+            if app.skin_selected < selected.len().saturating_sub(1) =>
+        {
+            app.skin_selected += 1;
+        }
+        KeyCode::Enter => {
+            if let Some((key, name)) = selected.get(app.skin_selected) {
+                if let Some(SkinMenuTarget::ThemePatch(path)) = skin_menu_target(app) {
+                    let refs: Vec<&str> = app
+                        .theme_patch_selections
+                        .iter()
+                        .map(String::as_str)
+                        .collect();
+                    if let Err(e) = crate::skin::patch::sync_skin_presets(&path, &refs) {
+                        app.notify(format!("❌ {e}"));
+                    } else if let Err(e) = crate::skin::patch::set_default_skin(&path, key) {
+                        app.notify(format!("❌ {e}"));
+                    } else if cfg!(target_os = "windows") {
+                        if let Err(e) = crate::deployer::deploy_to("weasel", &app.t) {
+                            app.notify(format!("❌ {e}"));
+                        } else {
+                            app.theme_patch_default = Some(key.clone());
+                            app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                            app.screen = AppScreen::Menu;
+                        }
+                    } else if cfg!(target_os = "macos") {
+                        if let Err(e) = crate::deployer::deploy_to("squirrel", &app.t) {
+                            app.notify(format!("❌ {e}"));
+                        } else {
+                            app.theme_patch_default = Some(key.clone());
+                            app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                            app.screen = AppScreen::Menu;
+                        }
+                    } else {
+                        app.theme_patch_default = Some(key.clone());
+                        app.notify(format!("✅ {}: {name}", app.t.t("skin.applied")));
+                        app.screen = AppScreen::Menu;
+                    }
+                }
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') => app.screen = AppScreen::ThemePatchPresetSelector,
+        _ => {}
+    }
+    Ok(())
+}
+
+fn selected_theme_patch_choices(app: &App) -> Vec<(String, String)> {
+    available_skin_choices(app)
+        .into_iter()
+        .filter(|(key, _)| app.theme_patch_selections.contains(key))
+        .collect()
 }
 
 #[derive(Clone, Copy)]
@@ -1591,6 +1706,12 @@ fn ui(f: &mut Frame, app: &App) {
         AppScreen::Result => render_result(f, chunks[1], app),
         AppScreen::SchemeSelector => render_scheme_selector(f, chunks[1], app),
         AppScreen::SkinSelector => render_skin_selector(f, chunks[1], app),
+        AppScreen::ThemePatchPresetSelector => {
+            render_theme_patch_preset_selector(f, chunks[1], app)
+        }
+        AppScreen::ThemePatchDefaultSelector => {
+            render_theme_patch_default_selector(f, chunks[1], app)
+        }
         AppScreen::Fcitx5DarkThemeSelector => {
             render_fcitx5_theme_selector(f, chunks[1], app, Fcitx5ThemePhase::Dark)
         }
@@ -2150,6 +2271,135 @@ fn render_skin_selector(f: &mut Frame, area: Rect, app: &App) {
             .min(visible_skins.len().saturating_sub(1)),
     ));
     f.render_stateful_widget(list, area, &mut state);
+}
+
+fn render_theme_patch_preset_selector(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = if area.width < 88 {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(6), Constraint::Length(4)])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(72), Constraint::Percentage(28)])
+            .split(area)
+    };
+    let skins = available_skin_choices(app);
+    let visible_rows = chunks[0].height.saturating_sub(2) as usize;
+    let window = sliding_window(app.skin_selected, skins.len(), visible_rows.max(1));
+    let visible_skins = &skins[window.start..window.end];
+    let items: Vec<ListItem> = visible_skins
+        .iter()
+        .map(|(key, name)| {
+            let marker = if app.theme_patch_selections.contains(key) {
+                "[x]"
+            } else {
+                "[ ]"
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {marker} "), accent_text()),
+                Span::styled(name.as_str(), primary_text()),
+                Span::styled(format!(" ({key})"), tertiary_text()),
+            ]))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(panel_block(app.t.t("skin.theme_patch_preset_prompt")))
+        .highlight_style(selection_style())
+        .highlight_symbol("▸ ");
+
+    let mut state = ratatui::widgets::ListState::default();
+    state.select(Some(
+        app.skin_selected
+            .saturating_sub(window.start)
+            .min(visible_skins.len().saturating_sub(1)),
+    ));
+    f.render_stateful_widget(list, chunks[0], &mut state);
+
+    let summary = vec![
+        Line::from(format!(
+            "  {}: {}",
+            app.t.t("menu.current_settings"),
+            app.theme_patch_selections.len()
+        )),
+        Line::from(format!(
+            "  {}: {}",
+            app.t.t("skin.theme_patch_default_prompt"),
+            app.theme_patch_default
+                .clone()
+                .unwrap_or_else(|| app.t.t("config.none").into())
+        )),
+    ];
+    let summary_panel = Paragraph::new(summary)
+        .wrap(Wrap { trim: true })
+        .block(panel_block(app.t.t("menu.result")));
+    f.render_widget(summary_panel, chunks[1]);
+}
+
+fn render_theme_patch_default_selector(f: &mut Frame, area: Rect, app: &App) {
+    let chunks = if area.width < 88 {
+        Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(6), Constraint::Length(4)])
+            .split(area)
+    } else {
+        Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(72), Constraint::Percentage(28)])
+            .split(area)
+    };
+    let skins = selected_theme_patch_choices(app);
+    let visible_rows = chunks[0].height.saturating_sub(2) as usize;
+    let window = sliding_window(app.skin_selected, skins.len(), visible_rows.max(1));
+    let visible_skins = &skins[window.start..window.end];
+    let items: Vec<ListItem> = visible_skins
+        .iter()
+        .map(|(key, name)| {
+            let mut spans = vec![Span::styled("  ", Style::default())];
+            if app.theme_patch_default.as_deref() == Some(key.as_str()) {
+                spans.push(Span::styled("● ", accent_text()));
+            } else {
+                spans.push(Span::styled("○ ", tertiary_text()));
+            }
+            spans.push(Span::styled(name.as_str(), primary_text()));
+            spans.push(Span::styled(format!(" ({key})"), tertiary_text()));
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+
+    let list = List::new(items)
+        .block(panel_block(app.t.t("skin.theme_patch_default_prompt")))
+        .highlight_style(selection_style())
+        .highlight_symbol("▸ ");
+
+    let mut state = ratatui::widgets::ListState::default();
+    state.select(Some(
+        app.skin_selected
+            .saturating_sub(window.start)
+            .min(visible_skins.len().saturating_sub(1)),
+    ));
+    f.render_stateful_widget(list, chunks[0], &mut state);
+
+    let summary = vec![
+        Line::from(format!(
+            "  {}: {}",
+            app.t.t("skin.theme_patch_preset_prompt"),
+            app.theme_patch_selections.len()
+        )),
+        Line::from(format!(
+            "  {}: {}",
+            app.t.t("skin.theme_patch_default_prompt"),
+            app.theme_patch_default
+                .clone()
+                .unwrap_or_else(|| app.t.t("config.none").into())
+        )),
+    ];
+    let summary_panel = Paragraph::new(summary)
+        .wrap(Wrap { trim: true })
+        .block(panel_block(app.t.t("menu.result")));
+    f.render_widget(summary_panel, chunks[1]);
 }
 
 fn render_fcitx5_theme_selector(f: &mut Frame, area: Rect, app: &App, phase: Fcitx5ThemePhase) {

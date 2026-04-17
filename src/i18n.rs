@@ -382,6 +382,21 @@ impl L10n {
         en.insert("skin.round_on", "Rounded on");
         zh.insert("skin.round_off", "关闭圆角");
         en.insert("skin.round_off", "Rounded off");
+        zh.insert("skin.theme_patch_preset_prompt", "选择要保留的内置主题");
+        en.insert(
+            "skin.theme_patch_preset_prompt",
+            "Select builtin themes to keep",
+        );
+        zh.insert("skin.theme_patch_default_prompt", "选择默认主题");
+        en.insert(
+            "skin.theme_patch_default_prompt",
+            "Choose the default theme",
+        );
+        zh.insert("skin.theme_patch_empty", "请至少选择一个内置主题");
+        en.insert(
+            "skin.theme_patch_empty",
+            "Select at least one builtin theme first",
+        );
 
         // ── 方案 ──
         zh.insert("scheme.select", "选择方案");

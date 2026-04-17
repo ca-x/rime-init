@@ -2,7 +2,7 @@ use crate::i18n::Lang;
 use crate::skin::builtin::builtin_skins;
 use anyhow::Result;
 use serde_yaml;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// 读取现有的 YAML patch 文件
@@ -90,6 +90,33 @@ pub fn sync_skin_presets(path: &Path, keys: &[&str]) -> Result<()> {
     write_patch(path, &doc)
 }
 
+pub fn read_skin_preset_selections(path: &Path) -> Result<HashSet<String>> {
+    let mut doc = read_patch(path)?;
+    let patch = get_patch(&mut doc);
+    let builtin_keys: HashSet<String> = builtin_skins(Lang::Zh)
+        .into_iter()
+        .map(|skin| skin.key)
+        .collect();
+
+    Ok(patch
+        .keys()
+        .filter_map(|key| key.strip_prefix("preset_color_schemes/"))
+        .filter(|key| builtin_keys.contains(*key))
+        .map(str::to_string)
+        .collect())
+}
+
+pub fn read_default_skin(path: &Path) -> Result<Option<String>> {
+    let mut doc = read_patch(path)?;
+    let patch = get_patch(&mut doc);
+    Ok(patch
+        .get("style/color_scheme")
+        .and_then(|value| match value {
+            serde_yaml::Value::String(value) if !value.trim().is_empty() => Some(value.clone()),
+            _ => None,
+        }))
+}
+
 /// 列出所有可用的内置主题
 #[allow(dead_code)]
 pub fn list_available_skins() -> Vec<(String, String)> {
@@ -127,6 +154,25 @@ mod tests {
         assert!(data.contains("preset_color_schemes/custom_theme"));
         assert!(data.contains("preset_color_schemes/wechat"));
         assert!(!data.contains("preset_color_schemes/jianchun:\n    name: old"));
+
+        std::fs::remove_file(path).ok();
+    }
+
+    #[test]
+    fn read_skin_helpers_extract_builtin_selections_and_default() {
+        let path = temp_patch_path("read-selections");
+        std::fs::write(
+            &path,
+            "patch:\n  preset_color_schemes/jianchun:\n    name: x\n  preset_color_schemes/custom_theme:\n    name: y\n  style/color_scheme: jianchun\n",
+        )
+        .expect("write patch");
+
+        let selections = read_skin_preset_selections(&path).expect("read selections");
+        let default_skin = read_default_skin(&path).expect("read default");
+
+        assert!(selections.contains("jianchun"));
+        assert!(!selections.contains("custom_theme"));
+        assert_eq!(default_skin.as_deref(), Some("jianchun"));
 
         std::fs::remove_file(path).ok();
     }
