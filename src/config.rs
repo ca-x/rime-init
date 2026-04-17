@@ -186,25 +186,19 @@ fn detect_schema_from_record(cache_dir: &Path, rime_dir: &Path) -> Option<Schema
 }
 
 fn detect_schema_from_files(config: &Config, rime_dir: &Path) -> Option<Schema> {
-    for schema in [
-        Schema::Ice,
-        Schema::Frost,
-        Schema::Mint,
-        Schema::WanxiangBase,
-    ] {
+    for schema in [Schema::Ice, Schema::Frost, Schema::Mint] {
         if schema_record_matches_files(schema, rime_dir) {
             return Some(schema);
         }
     }
 
     if config.schema.is_wanxiang()
-        && config.schema != Schema::WanxiangBase
         && schema_record_matches_files(config.schema, rime_dir)
     {
         return Some(config.schema);
     }
 
-    None
+    schema_record_matches_files(Schema::WanxiangBase, rime_dir).then_some(Schema::WanxiangBase)
 }
 
 fn schema_record_matches_files(schema: Schema, rime_dir: &Path) -> bool {
@@ -579,6 +573,23 @@ mod tests {
         let schema = detect_authoritative_schema(&Config::default(), &cache_dir, &rime_dir);
 
         assert_eq!(schema, Some(Schema::Frost));
+        std::fs::remove_dir_all(cache_dir).ok();
+        std::fs::remove_dir_all(rime_dir).ok();
+    }
+
+    #[test]
+    fn authoritative_schema_prefers_configured_wanxiang_pro_over_base_file_probe() {
+        let cache_dir = temp_dir("pro-preferred-cache");
+        let rime_dir = temp_dir("pro-preferred-rime");
+        std::fs::write(rime_dir.join("wanxiang.schema.yaml"), "").expect("write base schema");
+        std::fs::write(rime_dir.join("wanxiang_pro.schema.yaml"), "").expect("write pro schema");
+
+        let mut config = Config::default();
+        config.schema = Schema::WanxiangMoqi;
+
+        let schema = detect_authoritative_schema(&config, &cache_dir, &rime_dir);
+
+        assert_eq!(schema, Some(Schema::WanxiangMoqi));
         std::fs::remove_dir_all(cache_dir).ok();
         std::fs::remove_dir_all(rime_dir).ok();
     }
