@@ -1846,7 +1846,7 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
     } else {
         Alignment::Center
     })
-    .block(panel_block(app.t.t("menu.result")));
+    .block(panel_block(app.t.t("menu.current_path")));
     f.render_widget(breadcrumb, chunks[1]);
 }
 

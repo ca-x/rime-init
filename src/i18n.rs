@@ -42,6 +42,8 @@ impl L10n {
         en.insert("menu.done", "Done");
         zh.insert("menu.result", "结果");
         en.insert("menu.result", "Result");
+        zh.insert("menu.current_path", "当前路径");
+        en.insert("menu.current_path", "Current Path");
         zh.insert("menu.update_all", "一键更新");
         en.insert("menu.update_all", "Update All");
         zh.insert("menu.update_scheme", "更新方案");
