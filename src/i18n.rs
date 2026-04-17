@@ -564,7 +564,10 @@ impl L10n {
             "config.input_hint_page_size",
             "Enter 1-9, or leave empty to restore the default",
         );
-        zh.insert("config.input_hint_download_threads", "输入 1-8，1 表示单线程");
+        zh.insert(
+            "config.input_hint_download_threads",
+            "输入 1-8，1 表示单线程",
+        );
         en.insert(
             "config.input_hint_download_threads",
             "Enter 1-8; use 1 for single-threaded downloads",
@@ -574,7 +577,10 @@ impl L10n {
             "config.invalid_page_size",
             "Candidate count must be between 1 and 9",
         );
-        zh.insert("config.invalid_download_threads", "下载线程数必须在 1-8 之间");
+        zh.insert(
+            "config.invalid_download_threads",
+            "下载线程数必须在 1-8 之间",
+        );
         en.insert(
             "config.invalid_download_threads",
             "Download thread count must be between 1 and 8",

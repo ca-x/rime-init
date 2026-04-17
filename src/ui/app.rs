@@ -1707,7 +1707,7 @@ fn ui(f: &mut Frame, app: &App) {
     let size = f.area();
     f.render_widget(Clear, size);
 
-    let header_height = if size.width < 88 { 5 } else { 4 };
+    let header_height = 5;
 
     // 主布局: header + body + footer
     let chunks = Layout::default()
@@ -1764,31 +1764,76 @@ fn ui(f: &mut Frame, app: &App) {
 }
 
 fn render_header(f: &mut Frame, area: Rect, app: &App) {
-    let chunks = if area.height >= 5 {
+    let engine_text = current_engine_label(app);
+    let wide = area.width >= 120;
+    let chunks = if wide {
         Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Length(2), Constraint::Length(3)])
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(62), Constraint::Percentage(38)])
             .split(area)
     } else {
         Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Length(area.height.saturating_sub(1)),
-            ])
+            .constraints([Constraint::Length(3), Constraint::Min(2)])
             .split(area)
     };
 
-    let status = Paragraph::new(Line::from(vec![
-        Span::styled(" snout ", accent_text().add_modifier(Modifier::BOLD)),
-        Span::styled(
-            format!("v{}  ", env!("CARGO_PKG_VERSION")),
-            secondary_text(),
-        ),
-        Span::styled(app.schema.display_name_lang(app.t.lang()), primary_text()),
-    ]))
-    .alignment(Alignment::Center)
-    .block(Block::default().borders(Borders::BOTTOM));
+    let status_lines = if wide {
+        vec![Line::from(vec![
+            Span::styled(" snout ", accent_text().add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("v{}  ", env!("CARGO_PKG_VERSION")),
+                secondary_text(),
+            ),
+            Span::styled(" / ", tertiary_text()),
+            Span::styled(
+                format!("{}: ", app.t.t("config.detected_engines")),
+                secondary_text(),
+            ),
+            Span::styled(engine_text.clone(), primary_text()),
+            Span::styled(" / ", tertiary_text()),
+            Span::styled(
+                format!("{}: ", app.t.t("config.current_scheme")),
+                secondary_text(),
+            ),
+            Span::styled(app.schema.display_name_lang(app.t.lang()), primary_text()),
+        ])]
+    } else {
+        vec![
+            Line::from(vec![
+                Span::styled(" snout ", accent_text().add_modifier(Modifier::BOLD)),
+                Span::styled(
+                    format!("v{}", env!("CARGO_PKG_VERSION")),
+                    secondary_text(),
+                ),
+            ]),
+            Line::from(vec![
+                Span::styled(
+                    format!("{}: ", app.t.t("config.detected_engines")),
+                    secondary_text(),
+                ),
+                Span::styled(engine_text, primary_text()),
+                Span::styled("  • ", tertiary_text()),
+                Span::styled(
+                    format!("{}: ", app.t.t("config.current_scheme")),
+                    secondary_text(),
+                ),
+                Span::styled(app.schema.display_name_lang(app.t.lang()), primary_text()),
+            ]),
+        ]
+    };
+
+    let status = Paragraph::new(status_lines)
+        .alignment(if wide {
+            Alignment::Left
+        } else {
+            Alignment::Center
+        })
+        .block(if wide {
+            panel_block(app.t.t("app.name"))
+        } else {
+            Block::default().borders(Borders::BOTTOM)
+        });
     f.render_widget(status, chunks[0]);
 
     let breadcrumb = Paragraph::new(Line::from(vec![
@@ -1796,9 +1841,22 @@ fn render_header(f: &mut Frame, area: Rect, app: &App) {
         Span::styled("  /  ", tertiary_text()),
         Span::styled(current_screen_label(app), secondary_text()),
     ]))
-    .alignment(Alignment::Center)
-    .block(panel_block(app.t.t("app.name")));
+    .alignment(if wide {
+        Alignment::Right
+    } else {
+        Alignment::Center
+    })
+    .block(panel_block(app.t.t("menu.result")));
     f.render_widget(breadcrumb, chunks[1]);
+}
+
+fn current_engine_label(app: &App) -> String {
+    let engines = config::detect_installed_engines();
+    if engines.is_empty() {
+        app.t.t("config.none").to_string()
+    } else {
+        engines.join(", ")
+    }
 }
 
 fn current_screen_label(app: &App) -> &str {

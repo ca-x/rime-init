@@ -293,7 +293,10 @@ impl Client {
             .send_download_request_with_range(url, start, end, cancel, prefer_direct_mirror)
             .await?;
         if resp.status() != reqwest::StatusCode::PARTIAL_CONTENT {
-            anyhow::bail!("range download requires 206 response, got {}", resp.status());
+            anyhow::bail!(
+                "range download requires 206 response, got {}",
+                resp.status()
+            );
         }
 
         let mut file = tokio::fs::File::create(part_path).await?;
@@ -607,7 +610,9 @@ mod tests {
 
     #[tokio::test]
     async fn download_file_uses_parallel_ranges_when_enabled() {
-        let content = (0..2_000_000u32).map(|n| (n % 251) as u8).collect::<Vec<_>>();
+        let content = (0..2_000_000u32)
+            .map(|n| (n % 251) as u8)
+            .collect::<Vec<_>>();
         let server_content = content.clone();
         let observed_ranges = Arc::new(Mutex::new(Vec::<String>::new()));
         let observed_ranges_server = observed_ranges.clone();
@@ -663,8 +668,7 @@ mod tests {
                     );
                     let _ =
                         tokio::io::AsyncWriteExt::write_all(&mut socket, response.as_bytes()).await;
-                    let _ =
-                        tokio::io::AsyncWriteExt::write_all(&mut socket, &server_content).await;
+                    let _ = tokio::io::AsyncWriteExt::write_all(&mut socket, &server_content).await;
                 }
             }
         });
