@@ -192,11 +192,99 @@ fn detect_schema_from_files(config: &Config, rime_dir: &Path) -> Option<Schema> 
         }
     }
 
+    if let Some(schema) = detect_wanxiang_schema_from_files(config, rime_dir) {
+        return Some(schema);
+    }
+
+    schema_record_matches_files(Schema::WanxiangBase, rime_dir).then_some(Schema::WanxiangBase)
+}
+
+fn detect_wanxiang_schema_from_files(config: &Config, rime_dir: &Path) -> Option<Schema> {
+    if wanxiang_pro_markers_exist(rime_dir) {
+        return detect_wanxiang_pro_variant(rime_dir).or_else(|| {
+            matches!(
+                config.schema,
+                Schema::WanxiangMoqi
+                    | Schema::WanxiangFlypy
+                    | Schema::WanxiangZrm
+                    | Schema::WanxiangTiger
+                    | Schema::WanxiangWubi
+                    | Schema::WanxiangHanxin
+                    | Schema::WanxiangShouyou
+                    | Schema::WanxiangShyplus
+                    | Schema::WanxiangWx
+            )
+            .then_some(config.schema)
+        });
+    }
+
     if config.schema.is_wanxiang() && schema_record_matches_files(config.schema, rime_dir) {
         return Some(config.schema);
     }
 
-    schema_record_matches_files(Schema::WanxiangBase, rime_dir).then_some(Schema::WanxiangBase)
+    None
+}
+
+fn wanxiang_pro_markers_exist(rime_dir: &Path) -> bool {
+    wanxiang_pro_marker_paths(rime_dir)
+        .into_iter()
+        .any(|path| path.exists())
+}
+
+fn wanxiang_pro_marker_paths(rime_dir: &Path) -> Vec<PathBuf> {
+    vec![
+        rime_dir.join("wanxiang_pro.schema.yaml"),
+        rime_dir.join("wanxiang_pro.custom.yaml"),
+        rime_dir.join("wanxiang_pro.dict.yaml"),
+        rime_dir.join("custom").join("wanxiang_pro.schema.yaml"),
+        rime_dir.join("custom").join("wanxiang_pro.custom.yaml"),
+        rime_dir.join("custom").join("wanxiang_pro.dict.yaml"),
+    ]
+}
+
+fn detect_wanxiang_pro_variant(rime_dir: &Path) -> Option<Schema> {
+    wanxiang_pro_custom_paths(rime_dir)
+        .into_iter()
+        .find_map(|path| {
+            let content = fs::read_to_string(path).ok()?;
+            parse_wanxiang_pro_variant_from_text(&content)
+        })
+}
+
+fn wanxiang_pro_custom_paths(rime_dir: &Path) -> Vec<PathBuf> {
+    vec![
+        rime_dir.join("wanxiang_pro.custom.yaml"),
+        rime_dir.join("custom").join("wanxiang_pro.custom.yaml"),
+    ]
+}
+
+fn parse_wanxiang_pro_variant_from_text(content: &str) -> Option<Schema> {
+    let lowered = content.to_ascii_lowercase();
+    for (schema, ascii_markers, unicode_markers) in [
+        (Schema::WanxiangShyplus, &["shyplus"][..], &["首右+"][..]),
+        (Schema::WanxiangShouyou, &["shouyou"][..], &["首右"][..]),
+        (Schema::WanxiangHanxin, &["hanxin"][..], &["汉心"][..]),
+        (Schema::WanxiangWubi, &["wubi"][..], &["五笔"][..]),
+        (Schema::WanxiangTiger, &["tiger"][..], &["虎码"][..]),
+        (Schema::WanxiangZrm, &["zrm"][..], &["自然码"][..]),
+        (Schema::WanxiangFlypy, &["flypy"][..], &["小鹤"][..]),
+        (Schema::WanxiangMoqi, &["moqi"][..], &["墨奇"][..]),
+        (
+            Schema::WanxiangWx,
+            &["/pro/wx", "wx_chaifen"][..],
+            &["万象辅助"][..],
+        ),
+    ] {
+        if ascii_markers.iter().any(|marker| lowered.contains(marker))
+            || unicode_markers
+                .iter()
+                .any(|marker| content.contains(marker))
+        {
+            return Some(schema);
+        }
+    }
+
+    None
 }
 
 fn schema_record_matches_files(schema: Schema, rime_dir: &Path) -> bool {
@@ -210,7 +298,7 @@ fn schema_record_matches_files(schema: Schema, rime_dir: &Path) -> bool {
         | Schema::WanxiangHanxin
         | Schema::WanxiangShouyou
         | Schema::WanxiangShyplus
-        | Schema::WanxiangWx => rime_dir.join("wanxiang_pro.schema.yaml").exists(),
+        | Schema::WanxiangWx => wanxiang_pro_markers_exist(rime_dir),
         Schema::Ice => rime_dir.join("rime_ice.schema.yaml").exists(),
         Schema::Frost => rime_dir.join("rime_frost.schema.yaml").exists(),
         Schema::Mint => rime_dir.join("rime_mint.schema.yaml").exists(),
@@ -588,6 +676,54 @@ mod tests {
         let schema = detect_authoritative_schema(&config, &cache_dir, &rime_dir);
 
         assert_eq!(schema, Some(Schema::WanxiangMoqi));
+        std::fs::remove_dir_all(cache_dir).ok();
+        std::fs::remove_dir_all(rime_dir).ok();
+    }
+
+    #[test]
+    fn authoritative_schema_detects_wanxiang_pro_variant_from_custom_patch() {
+        let cache_dir = temp_dir("pro-custom-cache");
+        let rime_dir = temp_dir("pro-custom-rime");
+        std::fs::create_dir_all(rime_dir.join("custom")).expect("create custom dir");
+        std::fs::write(rime_dir.join("wanxiang.schema.yaml"), "").expect("write base schema");
+        std::fs::write(
+            rime_dir.join("custom").join("wanxiang_pro.custom.yaml"),
+            "patch:
+  speller/algebra:
+    __patch:
+      - wanxiang_algebra:/pro/自然码
+      - wanxiang_algebra:/pro/直接辅助
+",
+        )
+        .expect("write pro custom");
+
+        let schema = detect_authoritative_schema(&Config::default(), &cache_dir, &rime_dir);
+
+        assert_eq!(schema, Some(Schema::WanxiangZrm));
+        std::fs::remove_dir_all(cache_dir).ok();
+        std::fs::remove_dir_all(rime_dir).ok();
+    }
+
+    #[test]
+    fn authoritative_schema_detects_wanxiang_pro_wx_variant_from_custom_patch() {
+        let cache_dir = temp_dir("pro-wx-cache");
+        let rime_dir = temp_dir("pro-wx-rime");
+        std::fs::write(rime_dir.join("wanxiang.schema.yaml"), "").expect("write base schema");
+        std::fs::write(rime_dir.join("wanxiang_pro.dict.yaml"), "").expect("write pro dict");
+        std::fs::write(
+            rime_dir.join("wanxiang_pro.custom.yaml"),
+            "patch:
+  custom_phrase/user_dict: custom
+  comment_format:
+    - xform/^.*$/万象辅助/
+  aux_code: wx_chaifen
+",
+        )
+        .expect("write wx custom");
+
+        let schema = detect_authoritative_schema(&Config::default(), &cache_dir, &rime_dir);
+
+        assert_eq!(schema, Some(Schema::WanxiangWx));
         std::fs::remove_dir_all(cache_dir).ok();
         std::fs::remove_dir_all(rime_dir).ok();
     }
