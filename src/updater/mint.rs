@@ -105,6 +105,7 @@ impl MintUpdater {
             &self.base.rime_dir,
             &info.name,
             user_data_behavior_for_config(config),
+            &crate::config::effective_exclude_patterns(config),
         )?;
         filter_mint_distribution(&self.base.rime_dir)?;
 

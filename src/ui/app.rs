@@ -39,6 +39,8 @@ pub enum AppScreen {
     Fcitx5DarkThemeSelector,
     ConfigView,
     ConfigInput,
+    ExcludeRules,
+    WanxiangDiagnosis,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +90,8 @@ pub struct App {
     pending_update_mode: Option<UpdateMode>,
     pending_user_data_policy: Option<String>,
     update_user_data_policy_summary: Option<String>,
+    exclude_selected: usize,
+    exclude_edit_index: Option<usize>,
 }
 
 #[derive(Debug)]
@@ -187,6 +191,8 @@ struct ConfigStatusSnapshot {
 enum ConfigAction {
     TuiTheme,
     UserDataPolicy,
+    ExcludeRules,
+    WanxiangDiagnosis,
     Mirror,
     DownloadThreads,
     Language,
@@ -205,6 +211,7 @@ enum ConfigInputField {
     ProxyAddress,
     CandidatePageSize,
     DownloadThreads,
+    ExcludePattern,
 }
 
 #[derive(Clone)]
@@ -261,6 +268,8 @@ impl App {
             pending_update_mode: None,
             pending_user_data_policy: None,
             update_user_data_policy_summary: None,
+            exclude_selected: 0,
+            exclude_edit_index: None,
         }
     }
 
@@ -338,6 +347,16 @@ impl App {
                 self.t.t("hint.confirm"),
                 self.t.t("hint.back")
             ),
+            AppScreen::ExcludeRules => format!(
+                "↑↓/jk {}  Enter {}  a {}  d {}  r {}  Esc {}",
+                self.t.t("hint.navigate"),
+                self.t.t("hint.edit"),
+                self.t.t("hint.add"),
+                self.t.t("hint.delete"),
+                self.t.t("hint.reset"),
+                self.t.t("hint.back")
+            ),
+            AppScreen::WanxiangDiagnosis => format!("Esc {}", self.t.t("hint.back")),
             AppScreen::ConfigView => format!("Enter/Esc {}", self.t.t("hint.back")),
             AppScreen::Menu => format!(
                 "↑↓/jk {}  Enter {}  q/Esc {}",
@@ -503,6 +522,8 @@ async fn run_app(
                     }
                     AppScreen::ConfigView => handle_config_key(app, key.code),
                     AppScreen::ConfigInput => handle_config_input_key(app, key.code),
+                    AppScreen::ExcludeRules => handle_exclude_rules_key(app, key.code),
+                    AppScreen::WanxiangDiagnosis => handle_wanxiang_diagnosis_key(app, key.code),
                 }
             }
         }
@@ -1119,6 +1140,15 @@ fn handle_config_key(app: &mut App, key: KeyCode) {
                         }
                         manager.config.user_data_policy = next_policy;
                     }
+                    ConfigAction::ExcludeRules => {
+                        app.exclude_selected = 0;
+                        app.screen = AppScreen::ExcludeRules;
+                        return;
+                    }
+                    ConfigAction::WanxiangDiagnosis => {
+                        app.screen = AppScreen::WanxiangDiagnosis;
+                        return;
+                    }
                     ConfigAction::Mirror => manager.config.use_mirror = !manager.config.use_mirror,
                     ConfigAction::DownloadThreads => {
                         app.config_input_field = Some(ConfigInputField::DownloadThreads);
@@ -1212,7 +1242,16 @@ fn handle_config_input_key(app: &mut App, key: KeyCode) {
         KeyCode::Esc => {
             app.config_input_field = None;
             app.config_input_value.clear();
-            app.screen = AppScreen::ConfigView;
+            app.screen = if app.exclude_edit_index.is_some()
+                || matches!(
+                    app.config_input_field,
+                    Some(ConfigInputField::ExcludePattern)
+                ) {
+                AppScreen::ExcludeRules
+            } else {
+                AppScreen::ConfigView
+            };
+            app.exclude_edit_index = None;
         }
         KeyCode::Enter => {
             if let Ok(mut manager) = Manager::new() {
@@ -1258,12 +1297,36 @@ fn handle_config_input_key(app: &mut App, key: KeyCode) {
                             }
                         }
                     }
+                    Some(ConfigInputField::ExcludePattern) => {
+                        let result = if let Some(index) = app.exclude_edit_index {
+                            manager.update_exclude_pattern(index, app.config_input_value.clone())
+                        } else {
+                            manager.add_exclude_pattern(app.config_input_value.clone())
+                        };
+                        match result {
+                            Ok(()) => app.notify(app.t.t("config.saved").to_string()),
+                            Err(err) => {
+                                app.notify(format!("❌ {err}"));
+                                return;
+                            }
+                        }
+                    }
                     None => {}
                 }
             }
+            app.exclude_edit_index = None;
+            let return_screen = if matches!(
+                app.config_input_field,
+                Some(ConfigInputField::ExcludePattern)
+            ) || app.exclude_edit_index.is_some()
+            {
+                AppScreen::ExcludeRules
+            } else {
+                AppScreen::ConfigView
+            };
             app.config_input_field = None;
             app.config_input_value.clear();
-            app.screen = AppScreen::ConfigView;
+            app.screen = return_screen;
             refresh_config_status(app);
         }
         KeyCode::Backspace => {
@@ -1273,6 +1336,84 @@ fn handle_config_input_key(app: &mut App, key: KeyCode) {
             app.config_input_value.push(c);
         }
         _ => {}
+    }
+}
+
+fn handle_exclude_rules_key(app: &mut App, key: KeyCode) {
+    let manager = Manager::new();
+    let patterns = manager
+        .as_ref()
+        .map(|m| &m.config.exclude_files)
+        .cloned()
+        .unwrap_or_default();
+    let action_count = patterns.len() + 2;
+    match key {
+        KeyCode::Up | KeyCode::Char('k') => {
+            app.exclude_selected = app.exclude_selected.saturating_sub(1)
+        }
+        KeyCode::Down | KeyCode::Char('j') if app.exclude_selected + 1 < action_count => {
+            app.exclude_selected += 1
+        }
+        KeyCode::Char('a') => {
+            app.exclude_edit_index = None;
+            app.config_input_field = Some(ConfigInputField::ExcludePattern);
+            app.config_input_value.clear();
+            app.screen = AppScreen::ConfigInput;
+        }
+        KeyCode::Char('d') => {
+            if app.exclude_selected < patterns.len() {
+                if let Ok(mut manager) = Manager::new() {
+                    if let Err(err) = manager.remove_exclude_pattern(app.exclude_selected) {
+                        app.notify(format!("❌ {err}"));
+                    } else {
+                        app.notify(app.t.t("config.saved").to_string());
+                        app.exclude_selected = app
+                            .exclude_selected
+                            .min(manager.config.exclude_files.len().saturating_sub(1));
+                    }
+                }
+            }
+        }
+        KeyCode::Char('r') => {
+            if let Ok(mut manager) = Manager::new() {
+                if let Err(err) = manager.reset_exclude_patterns() {
+                    app.notify(format!("❌ {err}"));
+                } else {
+                    app.notify(app.t.t("config.saved").to_string());
+                    app.exclude_selected = 0;
+                }
+            }
+        }
+        KeyCode::Enter => {
+            if app.exclude_selected < patterns.len() {
+                app.exclude_edit_index = Some(app.exclude_selected);
+                app.config_input_field = Some(ConfigInputField::ExcludePattern);
+                app.config_input_value = patterns[app.exclude_selected].clone();
+                app.screen = AppScreen::ConfigInput;
+            } else if app.exclude_selected == patterns.len() {
+                app.exclude_edit_index = None;
+                app.config_input_field = Some(ConfigInputField::ExcludePattern);
+                app.config_input_value.clear();
+                app.screen = AppScreen::ConfigInput;
+            } else {
+                if let Ok(mut manager) = Manager::new() {
+                    if let Err(err) = manager.reset_exclude_patterns() {
+                        app.notify(format!("❌ {err}"));
+                    } else {
+                        app.notify(app.t.t("config.saved").to_string());
+                        app.exclude_selected = 0;
+                    }
+                }
+            }
+        }
+        KeyCode::Esc | KeyCode::Char('q') => app.screen = AppScreen::ConfigView,
+        _ => {}
+    }
+}
+
+fn handle_wanxiang_diagnosis_key(app: &mut App, key: KeyCode) {
+    if matches!(key, KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter) {
+        app.screen = AppScreen::ConfigView;
     }
 }
 
@@ -1288,11 +1429,17 @@ fn config_actions(config: &crate::types::Config) -> Vec<ConfigAction> {
     let mut actions = vec![
         ConfigAction::TuiTheme,
         ConfigAction::UserDataPolicy,
+        ConfigAction::ExcludeRules,
+    ];
+    if config.schema.is_wanxiang() {
+        actions.push(ConfigAction::WanxiangDiagnosis);
+    }
+    actions.extend([
         ConfigAction::Mirror,
         ConfigAction::DownloadThreads,
         ConfigAction::Language,
         ConfigAction::ProxyEnabled,
-    ];
+    ]);
     if config.proxy_enabled {
         actions.push(ConfigAction::ProxyType);
         actions.push(ConfigAction::ProxyAddress);
@@ -1898,6 +2045,8 @@ fn ui(f: &mut Frame, app: &App) {
         }
         AppScreen::ConfigView => render_config(f, chunks[1], app),
         AppScreen::ConfigInput => render_config_input(f, chunks[1], app),
+        AppScreen::ExcludeRules => render_exclude_rules(f, chunks[1], app),
+        AppScreen::WanxiangDiagnosis => render_wanxiang_diagnosis(f, chunks[1], app),
         AppScreen::SkinRoundPrompt => render_menu(f, chunks[1], app),
     }
 
@@ -2034,6 +2183,7 @@ fn current_screen_label(app: &App) -> &str {
             app.t.t("menu.update_all")
         }
         AppScreen::UserDataPolicyConfirm => app.t.t("menu.config"),
+        AppScreen::ExcludeRules | AppScreen::WanxiangDiagnosis => app.t.t("menu.config"),
         AppScreen::SchemeSelector => app.t.t("menu.switch_scheme"),
         AppScreen::SkinSelector
         | AppScreen::ThemePatchPresetSelector
@@ -2957,8 +3107,28 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
         action_line(
             actions
                 .iter()
-                .position(|action| *action == ConfigAction::Mirror)
+                .position(|action| *action == ConfigAction::ExcludeRules)
                 .unwrap_or(2),
+            format!("{}: ", app.t.t("config.exclude_rules_label")),
+            app.t.t("hint.edit").into(),
+        ),
+        if config.schema.is_wanxiang() {
+            action_line(
+                actions
+                    .iter()
+                    .position(|action| *action == ConfigAction::WanxiangDiagnosis)
+                    .unwrap_or(3),
+                format!("{}: ", app.t.t("config.wanxiang_diagnosis_label")),
+                app.t.t("hint.view").into(),
+            )
+        } else {
+            Line::from("")
+        },
+        action_line(
+            actions
+                .iter()
+                .position(|action| *action == ConfigAction::Mirror)
+                .unwrap_or(4),
             format!("{}: ", app.t.t("config.mirror_label")),
             if config.use_mirror {
                 app.t.t("config.enabled").into()
@@ -3196,16 +3366,203 @@ fn render_config(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(right, chunks[1]);
 }
 
+fn render_exclude_rules(f: &mut Frame, area: Rect, app: &App) {
+    let manager = Manager::new().ok();
+    let patterns = manager
+        .as_ref()
+        .map(|m| crate::config::effective_exclude_patterns(&m.config))
+        .unwrap_or_else(crate::config::default_exclude_patterns);
+    let descriptions = manager
+        .as_ref()
+        .and_then(|m| {
+            let effective = crate::config::effective_exclude_patterns(&m.config);
+            let (parsed, errors) = crate::config::parse_exclude_patterns(&effective);
+            if errors.is_empty() {
+                Some(
+                    parsed
+                        .iter()
+                        .map(crate::config::exclude_pattern_description)
+                        .collect::<Vec<_>>(),
+                )
+            } else {
+                None
+            }
+        })
+        .unwrap_or_else(|| patterns.clone());
+    let mut lines: Vec<Line> = vec![
+        Line::from(vec![Span::styled(
+            app.t.t("config.exclude_help"),
+            secondary_text(),
+        )]),
+        Line::from(vec![Span::styled(
+            format!(
+                "{}: {}",
+                app.t.t("config.exclude_effective_count"),
+                patterns.len()
+            ),
+            tertiary_text(),
+        )]),
+        Line::from(""),
+    ];
+    lines.extend(descriptions.iter().enumerate().map(|(i, desc)| {
+        let prefix = if i == app.exclude_selected {
+            "▸ "
+        } else {
+            "  "
+        };
+        let style = if i == app.exclude_selected {
+            selection_style()
+        } else {
+            primary_text()
+        };
+        Line::from(vec![Span::styled(format!("{prefix}{desc}"), style)])
+    }));
+    lines.push(Line::from(""));
+    let add_index = patterns.len();
+    let reset_index = patterns.len() + 1;
+    lines.push(Line::from(vec![Span::styled(
+        format!(
+            "{}{}",
+            if app.exclude_selected == add_index {
+                "▸ "
+            } else {
+                "  "
+            },
+            app.t.t("config.exclude_add")
+        ),
+        if app.exclude_selected == add_index {
+            selection_style()
+        } else {
+            accent_text()
+        },
+    )]));
+    lines.push(Line::from(vec![Span::styled(
+        format!(
+            "{}{}",
+            if app.exclude_selected == reset_index {
+                "▸ "
+            } else {
+                "  "
+            },
+            app.t.t("config.exclude_reset")
+        ),
+        if app.exclude_selected == reset_index {
+            selection_style()
+        } else {
+            tertiary_text()
+        },
+    )]));
+    lines.push(Line::from(""));
+    lines.push(Line::from(vec![Span::styled(
+        app.t.t("config.exclude_examples"),
+        tertiary_text(),
+    )]));
+    let p = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(panel_block(app.t.t("config.exclude_rules_title")));
+    f.render_widget(p, area);
+}
+
+fn render_wanxiang_diagnosis(f: &mut Frame, area: Rect, app: &App) {
+    let manager = match Manager::new() {
+        Ok(manager) => manager,
+        Err(err) => {
+            let p = Paragraph::new(format!("{}: {err}", app.t.t("update.failed")))
+                .block(panel_block(app.t.t("config.wanxiang_diagnosis_title")));
+            f.render_widget(p, area);
+            return;
+        }
+    };
+    let diagnosis =
+        crate::config::diagnose_wanxiang(&manager.config, &manager.cache_dir, &manager.rime_dir);
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(
+                format!("{}: ", app.t.t("config.current_scheme")),
+                secondary_text(),
+            ),
+            Span::styled(
+                diagnosis
+                    .detected_schema
+                    .map(|s| s.display_name_lang(app.t.lang()))
+                    .unwrap_or_else(|| app.t.t("config.none").into()),
+                primary_text(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Record: ", secondary_text()),
+            Span::styled(
+                diagnosis
+                    .record_schema
+                    .map(|s| s.display_name_lang(app.t.lang()))
+                    .unwrap_or_else(|| app.t.t("config.none").into()),
+                primary_text(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Config: ", secondary_text()),
+            Span::styled(
+                diagnosis
+                    .config_schema
+                    .map(|s| s.display_name_lang(app.t.lang()))
+                    .unwrap_or_else(|| app.t.t("config.none").into()),
+                primary_text(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Custom: ", secondary_text()),
+            Span::styled(
+                diagnosis
+                    .custom_patch_schema
+                    .map(|s| s.display_name_lang(app.t.lang()))
+                    .unwrap_or_else(|| app.t.t("config.none").into()),
+                primary_text(),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
+            app.t.t("config.wanxiang_markers_label"),
+            section_title_text(),
+        )]),
+    ];
+    for (path, exists) in diagnosis.marker_files {
+        lines.push(Line::from(vec![
+            Span::styled(
+                if exists { "  ✓ " } else { "  · " },
+                if exists {
+                    accent_text()
+                } else {
+                    tertiary_text()
+                },
+            ),
+            Span::styled(
+                path,
+                if exists {
+                    primary_text()
+                } else {
+                    tertiary_text()
+                },
+            ),
+        ]));
+    }
+    let p = Paragraph::new(lines)
+        .wrap(Wrap { trim: false })
+        .block(panel_block(app.t.t("config.wanxiang_diagnosis_title")));
+    f.render_widget(p, area);
+}
+
 fn render_config_input(f: &mut Frame, area: Rect, app: &App) {
     let title = match app.config_input_field {
         Some(ConfigInputField::ProxyAddress) => app.t.t("config.proxy_address_label"),
         Some(ConfigInputField::CandidatePageSize) => app.t.t("config.candidate_page_size_label"),
         Some(ConfigInputField::DownloadThreads) => app.t.t("config.download_threads_label"),
+        Some(ConfigInputField::ExcludePattern) => app.t.t("config.exclude_rules_label"),
         None => app.t.t("config.title"),
     };
     let hint = match app.config_input_field {
         Some(ConfigInputField::CandidatePageSize) => app.t.t("config.input_hint_page_size"),
         Some(ConfigInputField::DownloadThreads) => app.t.t("config.input_hint_download_threads"),
+        Some(ConfigInputField::ExcludePattern) => app.t.t("config.input_hint_exclude_rule"),
         _ => app.t.t("config.input_hint"),
     };
     let text = vec![
@@ -3597,6 +3954,17 @@ mod tests {
         assert_eq!(next_user_data_policy(&config), "discard");
         config.user_data_policy = "discard".into();
         assert_eq!(next_user_data_policy(&config), "prompt");
+    }
+
+    #[test]
+    fn config_actions_show_wanxiang_diagnosis_only_for_wanxiang() {
+        let mut config = crate::types::Config::default();
+        let actions = config_actions(&config);
+        assert!(actions.contains(&ConfigAction::WanxiangDiagnosis));
+
+        config.schema = Schema::Ice;
+        let actions = config_actions(&config);
+        assert!(!actions.contains(&ConfigAction::WanxiangDiagnosis));
     }
 
     fn buffer_to_string(backend: &TestBackend) -> String {

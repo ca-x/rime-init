@@ -559,6 +559,16 @@ impl L10n {
         en.insert("hint.input", "Input");
         zh.insert("hint.notice", "提示");
         en.insert("hint.notice", "Notice");
+        zh.insert("hint.edit", "编辑");
+        en.insert("hint.edit", "Edit");
+        zh.insert("hint.add", "添加");
+        en.insert("hint.add", "Add");
+        zh.insert("hint.delete", "删除");
+        en.insert("hint.delete", "Delete");
+        zh.insert("hint.reset", "重置");
+        en.insert("hint.reset", "Reset");
+        zh.insert("hint.view", "查看");
+        en.insert("hint.view", "View");
         zh.insert("hint.wait", "处理中，请等待");
         en.insert("hint.wait", "Working, please wait");
         zh.insert("hint.cancel", "取消");
@@ -646,6 +656,49 @@ impl L10n {
         en.insert("config.tui_theme_label", "TUI theme");
         zh.insert("config.user_data_policy_label", "用户数据保留");
         en.insert("config.user_data_policy_label", "User data policy");
+        zh.insert("config.exclude_rules_label", "排除规则");
+        en.insert("config.exclude_rules_label", "Exclude rules");
+        zh.insert("config.exclude_rules_title", "排除规则管理");
+        en.insert("config.exclude_rules_title", "Exclude rule manager");
+        zh.insert("config.exclude_add", "[添加规则]");
+        en.insert("config.exclude_add", "[Add rule]");
+        zh.insert("config.exclude_reset", "[恢复默认]");
+        en.insert("config.exclude_reset", "[Reset defaults]");
+        zh.insert("config.exclude_help", "支持：通配符 / 正则 / 精确匹配");
+        en.insert(
+            "config.exclude_help",
+            "Supports wildcard / regex / exact match",
+        );
+        zh.insert(
+            "config.exclude_examples",
+            "示例:
+  *.userdb*
+  ^sync/.*$
+  installation.yaml",
+        );
+        en.insert(
+            "config.exclude_examples",
+            "Examples:
+  *.userdb*
+  ^sync/.*$
+  installation.yaml",
+        );
+        zh.insert("config.exclude_effective_count", "生效规则数");
+        en.insert("config.exclude_effective_count", "Effective rules");
+        zh.insert(
+            "config.input_hint_exclude_rule",
+            "输入通配符 / 正则 / 精确匹配规则后按 Enter 保存",
+        );
+        en.insert(
+            "config.input_hint_exclude_rule",
+            "Enter a wildcard / regex / exact rule and press Enter to save",
+        );
+        zh.insert("config.wanxiang_diagnosis_label", "万象诊断");
+        en.insert("config.wanxiang_diagnosis_label", "Wanxiang diagnosis");
+        zh.insert("config.wanxiang_diagnosis_title", "万象方案诊断");
+        en.insert("config.wanxiang_diagnosis_title", "Wanxiang diagnosis");
+        zh.insert("config.wanxiang_markers_label", "检测到的标记文件");
+        en.insert("config.wanxiang_markers_label", "Detected marker files");
         zh.insert("config.user_data_policy_discard_title", "确认切换为不保留");
         en.insert(
             "config.user_data_policy_discard_title",

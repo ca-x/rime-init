@@ -11,6 +11,29 @@ pub struct Manager {
     pub cache_dir: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExcludePatternType {
+    Wildcard,
+    Regex,
+    Exact,
+}
+
+#[derive(Debug, Clone)]
+pub struct ExcludePattern {
+    pub original: String,
+    pub kind: ExcludePatternType,
+    regex: regex::Regex,
+}
+
+#[derive(Debug, Clone)]
+pub struct WanxiangDiagnosis {
+    pub detected_schema: Option<Schema>,
+    pub record_schema: Option<Schema>,
+    pub custom_patch_schema: Option<Schema>,
+    pub config_schema: Option<Schema>,
+    pub marker_files: Vec<(String, bool)>,
+}
+
 impl Manager {
     pub fn new() -> Result<Self> {
         let config_path = get_config_path()?;
@@ -48,6 +71,54 @@ impl Manager {
         let json = serde_json::to_string_pretty(&self.config)?;
         fs::write(&self.config_path, json)?;
         Ok(())
+    }
+
+    pub fn add_exclude_pattern(&mut self, pattern: String) -> Result<()> {
+        let pattern = pattern.trim().to_string();
+        if pattern.is_empty() {
+            anyhow::bail!("exclude pattern cannot be empty");
+        }
+        parse_exclude_pattern(&pattern)?;
+        if self.config.exclude_files.iter().any(|p| p == &pattern) {
+            anyhow::bail!("exclude pattern already exists");
+        }
+        self.config.exclude_files.push(pattern);
+        self.save()
+    }
+
+    pub fn update_exclude_pattern(&mut self, index: usize, pattern: String) -> Result<()> {
+        if index >= self.config.exclude_files.len() {
+            anyhow::bail!("exclude pattern index out of range");
+        }
+        let pattern = pattern.trim().to_string();
+        if pattern.is_empty() {
+            anyhow::bail!("exclude pattern cannot be empty");
+        }
+        parse_exclude_pattern(&pattern)?;
+        self.config.exclude_files[index] = pattern;
+        self.save()
+    }
+
+    pub fn remove_exclude_pattern(&mut self, index: usize) -> Result<()> {
+        if index >= self.config.exclude_files.len() {
+            anyhow::bail!("exclude pattern index out of range");
+        }
+        self.config.exclude_files.remove(index);
+        self.save()
+    }
+
+    pub fn reset_exclude_patterns(&mut self) -> Result<()> {
+        self.config.exclude_files = default_exclude_patterns();
+        self.save()
+    }
+
+    #[allow(dead_code)]
+    pub fn exclude_pattern_descriptions(&self) -> Result<Vec<String>> {
+        let (patterns, errors) = parse_exclude_patterns(&self.config.exclude_files);
+        if let Some(err) = errors.into_iter().next() {
+            return Err(err);
+        }
+        Ok(patterns.iter().map(exclude_pattern_description).collect())
     }
 
     /// 方案记录路径
@@ -135,6 +206,150 @@ pub fn rime_installation_message(lang: Lang) -> String {
             t.t("wizard.install.weasel"),
             t.t("install.hint.after_engine")
         )
+    }
+}
+
+pub fn default_exclude_patterns() -> Vec<String> {
+    vec![
+        "*.userdb*".into(),
+        "*.custom.yaml".into(),
+        "installation.yaml".into(),
+        "user.yaml".into(),
+        "custom_phrase.txt".into(),
+    ]
+}
+
+pub fn parse_exclude_pattern(pattern: &str) -> Result<Option<ExcludePattern>> {
+    let pattern = pattern.trim();
+    if pattern.is_empty() {
+        return Ok(None);
+    }
+
+    let (kind, regex_source) = if has_regex_chars(pattern) {
+        (ExcludePatternType::Regex, pattern.to_string())
+    } else if pattern.contains('*') || pattern.contains('?') {
+        (ExcludePatternType::Wildcard, wildcard_to_regex(pattern))
+    } else {
+        (
+            ExcludePatternType::Exact,
+            format!("^{}$", regex::escape(pattern)),
+        )
+    };
+
+    let regex = regex::Regex::new(&regex_source)
+        .with_context(|| format!("invalid exclude pattern: {pattern}"))?;
+
+    Ok(Some(ExcludePattern {
+        original: pattern.into(),
+        kind,
+        regex,
+    }))
+}
+
+pub fn parse_exclude_patterns(patterns: &[String]) -> (Vec<ExcludePattern>, Vec<anyhow::Error>) {
+    let mut parsed = Vec::new();
+    let mut errors = Vec::new();
+
+    for pattern in patterns {
+        match parse_exclude_pattern(pattern) {
+            Ok(Some(item)) => parsed.push(item),
+            Ok(None) => {}
+            Err(err) => errors.push(err),
+        }
+    }
+
+    (parsed, errors)
+}
+
+pub fn matches_any_exclude_pattern(path: &Path, patterns: &[ExcludePattern]) -> bool {
+    let normalized = path.to_string_lossy().replace('\\', "/");
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+
+    patterns
+        .iter()
+        .any(|pattern| pattern.regex.is_match(&normalized) || pattern.regex.is_match(name))
+}
+
+pub fn exclude_pattern_description(pattern: &ExcludePattern) -> String {
+    let label = match pattern.kind {
+        ExcludePatternType::Wildcard => "通配符",
+        ExcludePatternType::Regex => "正则",
+        ExcludePatternType::Exact => "精确",
+    };
+    format!("{label}: {}", pattern.original)
+}
+
+fn wildcard_to_regex(pattern: &str) -> String {
+    let mut result = String::from("^");
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '*' => {
+                if i + 1 < chars.len() && chars[i + 1] == '*' {
+                    result.push_str(".*");
+                    i += 1;
+                } else {
+                    result.push_str("[^/\\\\]*");
+                }
+            }
+            '?' => result.push_str("[^/\\\\]"),
+            c if ".+^$()[]{}|\\".contains(c) => {
+                result.push('\\');
+                result.push(c);
+            }
+            c => result.push(c),
+        }
+        i += 1;
+    }
+    result.push('$');
+    result
+}
+
+fn has_regex_chars(pattern: &str) -> bool {
+    [
+        "^", "$", "[", "]", "(", ")", "{", "}", "|", "+", "\\", "\\.",
+    ]
+    .iter()
+    .any(|token| pattern.contains(token))
+}
+
+pub fn effective_exclude_patterns(config: &Config) -> Vec<String> {
+    let mut patterns = default_exclude_patterns();
+    for item in &config.exclude_files {
+        if !patterns.iter().any(|p| p == item) {
+            patterns.push(item.clone());
+        }
+    }
+    patterns
+}
+
+pub fn diagnose_wanxiang(config: &Config, cache_dir: &Path, rime_dir: &Path) -> WanxiangDiagnosis {
+    let record_schema = detect_schema_from_record(cache_dir, rime_dir);
+    let custom_patch_schema = detect_wanxiang_pro_variant(rime_dir);
+    let detected_schema = detect_authoritative_schema(config, cache_dir, rime_dir);
+    let config_schema = config.schema.is_wanxiang().then_some(config.schema);
+    let marker_files = wanxiang_pro_marker_paths(rime_dir)
+        .into_iter()
+        .map(|path| {
+            (
+                path.strip_prefix(rime_dir)
+                    .unwrap_or(&path)
+                    .display()
+                    .to_string(),
+                path.exists(),
+            )
+        })
+        .collect();
+    WanxiangDiagnosis {
+        detected_schema,
+        record_schema,
+        custom_patch_schema,
+        config_schema,
+        marker_files,
     }
 }
 
@@ -726,5 +941,34 @@ mod tests {
         assert_eq!(schema, Some(Schema::WanxiangWx));
         std::fs::remove_dir_all(cache_dir).ok();
         std::fs::remove_dir_all(rime_dir).ok();
+    }
+    #[test]
+    fn exclude_pattern_parser_supports_wildcard_regex_and_exact() {
+        let wildcard = parse_exclude_pattern("*.userdb*")
+            .expect("parse wildcard")
+            .expect("pattern");
+        assert!(matches!(wildcard.kind, ExcludePatternType::Wildcard));
+        assert!(matches_any_exclude_pattern(
+            Path::new("user_flypyzc.userdb"),
+            &[wildcard]
+        ));
+
+        let regex = parse_exclude_pattern(r"^sync/.*$")
+            .expect("parse regex")
+            .expect("pattern");
+        assert!(matches!(regex.kind, ExcludePatternType::Regex));
+        assert!(matches_any_exclude_pattern(
+            Path::new("sync/data.yaml"),
+            &[regex]
+        ));
+
+        let exact = parse_exclude_pattern("installation.yaml")
+            .expect("parse exact")
+            .expect("pattern");
+        assert!(matches!(exact.kind, ExcludePatternType::Exact));
+        assert!(matches_any_exclude_pattern(
+            Path::new("installation.yaml"),
+            &[exact]
+        ));
     }
 }

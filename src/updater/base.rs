@@ -193,6 +193,7 @@ impl BaseUpdater {
             &zip_path,
             extract_dest,
             user_data_behavior_for_config(config),
+            &crate::config::effective_exclude_patterns(config),
         )?;
 
         Ok(())

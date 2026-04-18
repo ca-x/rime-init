@@ -144,6 +144,7 @@ impl WanxiangUpdater {
                 &self.base.rime_dir,
                 &info.name,
                 user_data_behavior_for_config(config),
+                &crate::config::effective_exclude_patterns(config),
             ) {
                 let msg = format!("{}: {e}", t.t("update.nested_dir_failed"));
                 crate::feedback::warn(format!("⚠️ {msg}"));
@@ -324,6 +325,7 @@ impl WanxiangUpdater {
                 &dict_dir,
                 &info.name,
                 user_data_behavior_for_config(config),
+                &crate::config::effective_exclude_patterns(config),
             ) {
                 let msg = format!("{}: {e}", t.t("update.nested_dir_failed"));
                 crate::feedback::warn(format!("⚠️ {msg}"));
