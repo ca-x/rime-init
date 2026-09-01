@@ -491,34 +491,30 @@ async fn handle_menu_key(app: &mut App, key: KeyCode) -> Result<()> {
                     app.screen = AppScreen::Result;
                     app.update_results.clear();
                     app.update_stage_lines.clear();
+                    let mut succeeded = false;
                     if app.schema.supports_model_patch() {
                         let patched = updater::model_patch::is_model_patched(
                             std::path::Path::new(&app.rime_dir),
                             &app.schema,
                             app.t.lang(),
                         );
-                        if patched {
-                            if let Err(e) = updater::model_patch::unpatch_model(
-                                std::path::Path::new(&app.rime_dir),
-                                &app.schema,
-                                app.t.lang(),
-                            ) {
-                                app.update_results.push(format!("❌ {e}"));
+                        let desired = !patched;
+                        let result = Manager::new().and_then(|mut manager| {
+                            manager.rime_dir = std::path::PathBuf::from(&app.rime_dir);
+                            set_model_patch_enabled(&mut manager, app.schema, app.t.lang(), desired)
+                        });
+                        if let Err(e) = result {
+                            app.update_results.push(format!("❌ {e}"));
+                        } else {
+                            succeeded = true;
+                            if desired {
+                                app.update_results
+                                    .push(format!("✅ {}", app.t.t("patch.model.enabled")));
                             } else {
                                 app.update_results
                                     .push(format!("✅ {}", app.t.t("patch.model.disabled")));
                             }
-                        } else {
-                            if let Err(e) = updater::model_patch::patch_model(
-                                std::path::Path::new(&app.rime_dir),
-                                &app.schema,
-                                app.t.lang(),
-                            ) {
-                                app.update_results.push(format!("❌ {e}"));
-                            } else {
-                                app.update_results
-                                    .push(format!("✅ {}", app.t.t("patch.model.enabled")));
-                            }
+                            refresh_config_status(app);
                         }
                     } else {
                         app.update_results
@@ -526,7 +522,11 @@ async fn handle_menu_key(app: &mut App, key: KeyCode) -> Result<()> {
                     }
                     app.update_msg = app.t.t("menu.model_patch").into();
                     app.update_done = true;
-                    app.update_outcome = Some(UpdateOutcome::Success);
+                    app.update_outcome = Some(if succeeded {
+                        UpdateOutcome::Success
+                    } else {
+                        UpdateOutcome::Failure
+                    });
                 }
                 6 => {
                     app.skin_selected = 0;
@@ -634,6 +634,42 @@ fn handle_result_key(app: &mut App, key: KeyCode) {
         }
         _ => {}
     }
+}
+
+fn set_model_patch_enabled(
+    manager: &mut Manager,
+    schema: Schema,
+    lang: Lang,
+    enabled: bool,
+) -> Result<()> {
+    let was_enabled = manager.config.model_patch_enabled;
+    let was_applied = updater::model_patch::is_model_patched(&manager.rime_dir, &schema, lang);
+
+    if enabled != was_applied {
+        if enabled {
+            updater::model_patch::patch_model(&manager.rime_dir, &schema, lang)?;
+        } else {
+            updater::model_patch::unpatch_model(&manager.rime_dir, &schema, lang)?;
+        }
+    }
+
+    manager.config.model_patch_enabled = enabled;
+    if let Err(save_error) = manager.save() {
+        manager.config.model_patch_enabled = was_enabled;
+        let rollback = if was_applied {
+            updater::model_patch::patch_model(&manager.rime_dir, &schema, lang)
+        } else {
+            updater::model_patch::unpatch_model(&manager.rime_dir, &schema, lang)
+        };
+        return match rollback {
+            Ok(()) => Err(save_error),
+            Err(rollback_error) => Err(anyhow::anyhow!(
+                "{save_error}; model patch rollback failed: {rollback_error}"
+            )),
+        };
+    }
+
+    Ok(())
 }
 
 fn handle_updating_key(app: &mut App, key: KeyCode) {
@@ -1101,7 +1137,16 @@ fn handle_config_key(app: &mut App, key: KeyCode) {
                         return;
                     }
                     ConfigAction::ModelPatch => {
-                        manager.config.model_patch_enabled = !manager.config.model_patch_enabled
+                        let enabled = !manager.config.model_patch_enabled;
+                        if let Err(e) =
+                            set_model_patch_enabled(&mut manager, app.schema, app.t.lang(), enabled)
+                        {
+                            app.notify(format!("❌ {e}"));
+                            return;
+                        }
+                        refresh_config_status(app);
+                        app.notify(app.t.t("config.saved").to_string());
+                        return;
                     }
                     ConfigAction::CandidatePageSize => {
                         app.config_input_field = Some(ConfigInputField::CandidatePageSize);
@@ -2916,6 +2961,54 @@ mod tests {
         config.schema = Schema::Ice;
         let actions = config_actions(&config);
         assert!(!actions.contains(&ConfigAction::WanxiangDiagnosis));
+    }
+
+    #[test]
+    fn setting_model_patch_keeps_preference_and_applied_state_in_sync() {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time went backwards")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("snout-model-patch-setting-{nanos}"));
+        let mut manager = Manager {
+            config_path: root.join("config.json"),
+            config: crate::types::Config::default(),
+            rime_dir: root.join("rime"),
+            cache_dir: root.join("cache"),
+        };
+        std::fs::create_dir_all(&manager.rime_dir).expect("create rime dir");
+
+        set_model_patch_enabled(&mut manager, Schema::WanxiangBase, Lang::Zh, true)
+            .expect("enable model patch");
+        assert!(manager.config.model_patch_enabled);
+        assert!(updater::model_patch::is_model_patched(
+            &manager.rime_dir,
+            &Schema::WanxiangBase,
+            Lang::Zh
+        ));
+        let saved: crate::types::Config = serde_json::from_str(
+            &std::fs::read_to_string(&manager.config_path).expect("read saved config"),
+        )
+        .expect("parse saved config");
+        assert!(saved.model_patch_enabled);
+
+        set_model_patch_enabled(&mut manager, Schema::WanxiangBase, Lang::Zh, false)
+            .expect("disable model patch");
+        assert!(!manager.config.model_patch_enabled);
+        assert!(!updater::model_patch::is_model_patched(
+            &manager.rime_dir,
+            &Schema::WanxiangBase,
+            Lang::Zh
+        ));
+        let saved: crate::types::Config = serde_json::from_str(
+            &std::fs::read_to_string(&manager.config_path).expect("read saved config"),
+        )
+        .expect("parse saved config");
+        assert!(!saved.model_patch_enabled);
+
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

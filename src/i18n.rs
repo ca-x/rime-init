@@ -89,10 +89,13 @@ impl L10n {
             "menu.desc.update_model",
             "Download or update the language model file.",
         );
-        zh.insert("menu.desc.model_patch", "为当前方案启用或移除模型 patch。");
+        zh.insert(
+            "menu.desc.model_patch",
+            "切换当前方案的模型 patch，并同步自动应用设置。",
+        );
         en.insert(
             "menu.desc.model_patch",
-            "Enable or remove the model patch for the current scheme.",
+            "Toggle the current scheme's model patch and keep auto apply in sync.",
         );
         zh.insert("menu.desc.skin_patch", "设置输入法主题或皮肤 patch。");
         en.insert(
@@ -349,6 +352,10 @@ impl L10n {
         en.insert("patch.model.enabled", "Model patch enabled");
         zh.insert("patch.model.disabled", "模型 patch 已移除");
         en.insert("patch.model.disabled", "Model patch removed");
+        zh.insert("patch.model.status_enabled", "已启用");
+        en.insert("patch.model.status_enabled", "Enabled");
+        zh.insert("patch.model.status_disabled", "未启用");
+        en.insert("patch.model.status_disabled", "Not enabled");
         zh.insert("patch.model.not_supported", "此方案不支持模型 patch");
         en.insert(
             "patch.model.not_supported",
@@ -652,6 +659,10 @@ impl L10n {
         );
         zh.insert("config.model_patch_label", "自动模型 Patch");
         en.insert("config.model_patch_label", "Auto model patch");
+        zh.insert("config.model_patch_auto_status_label", "自动");
+        en.insert("config.model_patch_auto_status_label", "Auto");
+        zh.insert("config.model_patch_current_status_label", "当前");
+        en.insert("config.model_patch_current_status_label", "Current");
         zh.insert("config.tui_theme_label", "TUI 主题");
         en.insert("config.tui_theme_label", "TUI theme");
         zh.insert("config.user_data_policy_label", "用户数据保留");
@@ -740,8 +751,8 @@ impl L10n {
         en.insert("config.dict_status_label", "Dictionary status");
         zh.insert("config.model_status_label", "模型状态");
         en.insert("config.model_status_label", "Model status");
-        zh.insert("config.model_patch_status_label", "模型 Patch 状态");
-        en.insert("config.model_patch_status_label", "Model patch status");
+        zh.insert("config.model_patch_status_label", "模型 Patch");
+        en.insert("config.model_patch_status_label", "Model patch");
         zh.insert("config.enabled", "开启");
         en.insert("config.enabled", "Enabled");
         zh.insert("config.disabled", "关闭");

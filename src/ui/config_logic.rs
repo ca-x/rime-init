@@ -104,18 +104,10 @@ pub(crate) async fn build_config_status_snapshot(
                 scheme_status: local_status_text(&t, scheme_local.as_ref(), None),
                 dict_status: local_status_text(&t, dict_local.as_ref(), None),
                 model_status: local_status_text(&t, model_local.as_ref(), None),
-                model_patch_status: format!(
-                    "{} / {}",
-                    if manager.config.model_patch_enabled {
-                        t.t("config.enabled")
-                    } else {
-                        t.t("config.disabled")
-                    },
-                    if model_patch_applied {
-                        t.t("patch.model.enabled")
-                    } else {
-                        t.t("patch.model.disabled")
-                    }
+                model_patch_status: model_patch_status_text(
+                    &t,
+                    manager.config.model_patch_enabled,
+                    model_patch_applied,
                 ),
                 candidate_page_size: candidate_page_size_text(&rime_dir, schema, &t),
                 installed_scheme_version: installed_version_text(&t, scheme_local.as_ref()),
@@ -198,18 +190,10 @@ pub(crate) async fn build_config_status_snapshot(
             local_status_text(&t, dict_local.as_ref(), dict_remote.as_ref())
         },
         model_status: local_status_text(&t, model_local.as_ref(), model_remote.as_ref()),
-        model_patch_status: format!(
-            "{} / {}",
-            if manager.config.model_patch_enabled {
-                t.t("config.enabled")
-            } else {
-                t.t("config.disabled")
-            },
-            if model_patch_applied {
-                t.t("patch.model.enabled")
-            } else {
-                t.t("patch.model.disabled")
-            }
+        model_patch_status: model_patch_status_text(
+            &t,
+            manager.config.model_patch_enabled,
+            model_patch_applied,
         ),
         candidate_page_size: candidate_page_size_text(&rime_dir, schema, &t),
         installed_scheme_version: installed_version_text(&t, scheme_local.as_ref()),
@@ -407,6 +391,20 @@ pub(crate) fn config_enabled_label(enabled: bool, t: &L10n) -> String {
     }
 }
 
+fn model_patch_status_text(t: &L10n, auto_enabled: bool, applied: bool) -> String {
+    format!(
+        "{}: {} / {}: {}",
+        t.t("config.model_patch_auto_status_label"),
+        config_enabled_label(auto_enabled, t),
+        t.t("config.model_patch_current_status_label"),
+        if applied {
+            t.t("patch.model.status_enabled")
+        } else {
+            t.t("patch.model.status_disabled")
+        }
+    )
+}
+
 pub(crate) fn next_language_value(current: &str) -> String {
     if current.starts_with("zh") {
         "en".into()
@@ -420,5 +418,30 @@ pub(crate) fn next_proxy_type_value(current: &str) -> String {
         "socks5".into()
     } else {
         "http".into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn model_patch_status_names_preference_and_applied_state() {
+        let t = L10n::new(Lang::Zh);
+
+        assert_eq!(
+            model_patch_status_text(&t, false, true),
+            "自动: 关闭 / 当前: 已启用"
+        );
+        assert_eq!(
+            model_patch_status_text(&t, true, false),
+            "自动: 开启 / 当前: 未启用"
+        );
+
+        let t = L10n::new(Lang::En);
+        assert_eq!(
+            model_patch_status_text(&t, false, true),
+            "Auto: Disabled / Current: Enabled"
+        );
     }
 }
