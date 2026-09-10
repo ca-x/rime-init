@@ -2,6 +2,9 @@ use crate::i18n::{L10n, Lang};
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "linux")]
+pub mod fcitx5;
+
 /// 更新前准备（Windows 需要先停止占用 Rime 用户目录的 Weasel 进程）
 pub fn prepare_for_update(_lang: Lang) -> Result<()> {
     #[cfg(target_os = "windows")]

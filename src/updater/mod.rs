@@ -257,6 +257,38 @@ pub async fn update_all(
         ));
     }
 
+    // Register Rime for both the setup wizard and CLI/TUI full updates.
+    #[cfg(target_os = "linux")]
+    if crate::deployer::detect_engines()
+        .iter()
+        .any(|e| e == "fcitx5")
+    {
+        cancel.checkpoint()?;
+        emit(UpdateEvent {
+            component: UpdateComponent::Deploy,
+            phase: UpdatePhase::Applying,
+            progress: 0.94,
+            detail: t.t("fcitx5.setup.configuring").into(),
+        });
+        let component = t.t("fcitx5.setup.component");
+        match crate::deployer::fcitx5::ensure_rime(t.lang()).await {
+            Ok(added) => {
+                let message = t.t(if added {
+                    "fcitx5.setup.added"
+                } else {
+                    "fcitx5.setup.already_added"
+                });
+                crate::feedback::info(message);
+                results.push(BaseUpdater::success_result(component, "-", "-", message));
+            }
+            Err(error) => {
+                let message = format!("{}: {error:#}", t.t("fcitx5.setup.failed"));
+                crate::feedback::warn(&message);
+                results.push(BaseUpdater::error_result(component, &message));
+            }
+        }
+    }
+
     // 4. 多引擎同步 (Linux/macOS/windows: 仅在检测到多个引擎时执行)
     if config.engine_sync_enabled {
         cancel.checkpoint()?;

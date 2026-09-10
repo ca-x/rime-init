@@ -171,7 +171,7 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     if cli.init {
-        ui::wizard::run_init_wizard().await?;
+        ui::wizard::run_init_wizard(cli.lang.as_deref()).await?;
     } else if cli.update
         || cli.scheme
         || cli.dict

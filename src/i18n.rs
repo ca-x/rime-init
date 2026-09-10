@@ -242,6 +242,84 @@ impl L10n {
         en.insert("deploy.failed", "Deploy failed");
         zh.insert("deploy.reloaded.fcitx5", "Fcitx5 已重载");
         en.insert("deploy.reloaded.fcitx5", "Fcitx5 reloaded");
+        zh.insert("fcitx5.setup.component", "Fcitx5 输入法配置");
+        en.insert("fcitx5.setup.component", "Fcitx5 input method setup");
+        zh.insert(
+            "fcitx5.setup.configuring",
+            "正在将 Rime 添加到 Fcitx5 输入法组...",
+        );
+        en.insert(
+            "fcitx5.setup.configuring",
+            "Adding Rime to the Fcitx5 input method group...",
+        );
+        zh.insert(
+            "fcitx5.setup.added",
+            "已将 Rime 添加到当前 Fcitx5 输入法组，可通过输入法快捷键切换",
+        );
+        en.insert(
+            "fcitx5.setup.added",
+            "Rime added to the current Fcitx5 group; use your input method shortcut to switch",
+        );
+        zh.insert(
+            "fcitx5.setup.already_added",
+            "当前 Fcitx5 输入法组已包含 Rime",
+        );
+        en.insert(
+            "fcitx5.setup.already_added",
+            "Rime is already in the current Fcitx5 group",
+        );
+        zh.insert("fcitx5.setup.failed", "自动添加 Rime 未完成");
+        en.insert("fcitx5.setup.failed", "Could not automatically add Rime");
+        zh.insert(
+            "fcitx5.setup.session_unavailable",
+            "无法连接桌面会话 D-Bus，请在桌面终端中以当前用户运行 snout --update",
+        );
+        en.insert("fcitx5.setup.session_unavailable", "Cannot connect to the desktop session bus; run snout --update as your desktop user in a terminal");
+        zh.insert(
+            "fcitx5.setup.not_running",
+            "Fcitx5 未运行，请启动 Fcitx5 后重新运行 snout --update",
+        );
+        en.insert(
+            "fcitx5.setup.not_running",
+            "Fcitx5 is not running; start Fcitx5 and run snout --update again",
+        );
+        zh.insert(
+            "fcitx5.setup.rime_missing",
+            "Fcitx5 未识别到 Rime，请安装 fcitx5-rime 并重启 Fcitx5 后重新运行 snout --update",
+        );
+        en.insert("fcitx5.setup.rime_missing", "Rime is unavailable in Fcitx5; install fcitx5-rime, restart Fcitx5 and run snout --update again");
+        zh.insert(
+            "fcitx5.setup.no_group",
+            "未找到当前 Fcitx5 输入法组，请在 Fcitx5 配置工具中创建输入法组后重试",
+        );
+        en.insert(
+            "fcitx5.setup.no_group",
+            "No current Fcitx5 group; create one in the Fcitx5 configuration tool and retry",
+        );
+        zh.insert(
+            "fcitx5.setup.save_failed",
+            "未能保存 Rime 输入法配置，请检查 Fcitx5 输入法组后重试",
+        );
+        en.insert(
+            "fcitx5.setup.save_failed",
+            "Could not save the Rime input method configuration; check the Fcitx5 group and retry",
+        );
+        zh.insert(
+            "fcitx5.setup.permission_denied",
+            "Fcitx5 拒绝写入输入法配置，请检查当前用户的 D-Bus 访问权限及 Fcitx5 配置目录权限后重试",
+        );
+        en.insert(
+            "fcitx5.setup.permission_denied",
+            "Fcitx5 denied the configuration write; check your user's D-Bus access and Fcitx5 configuration directory permissions, then retry",
+        );
+        zh.insert(
+            "fcitx5.setup.timeout",
+            "Fcitx5 配置超时，请检查 Fcitx5 是否正常运行后重试",
+        );
+        en.insert(
+            "fcitx5.setup.timeout",
+            "Fcitx5 setup timed out; check that Fcitx5 is responding and retry",
+        );
         zh.insert("deploy.reloaded.ibus", "IBus 已重载");
         en.insert("deploy.reloaded.ibus", "IBus reloaded");
         zh.insert("deploy.reloaded.squirrel", "鼠须管已重载");

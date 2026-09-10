@@ -31,6 +31,9 @@ cargo build --release
 # 二进制在 target/release/snout
 ```
 
+Linux 上运行 `cargo test` 需安装 `dbus-daemon`。Fcitx5 集成测试使用独立的临时 D-Bus，
+不会读写当前桌面的输入法配置。
+
 ### Arch Linux (AUR)
 
 ```bash
@@ -58,6 +61,12 @@ snout --init
 ```
 
 引导选择方案、词库，自动下载并部署。
+
+Linux 使用 Fcitx5 时，初始化和一键更新（`snout --update` 或 TUI 中的“一键更新”）
+会自动将 Rime 添加到当前输入法组并保存，保留已有输入法、顺序和键盘布局，重复运行不会重复添加。
+添加后可通过 Fcitx5 输入法快捷键切换到 Rime，更新不会主动切换当前输入法。
+需先安装 `fcitx5-rime` 并在当前桌面会话中启动 Fcitx5；未满足条件时会显示原因和重试方法。
+此步骤不安装软件包，也不设置桌面输入法框架或自启动。
 
 ### 命令行模式
 
@@ -273,6 +282,14 @@ A Rime input method initialization & update tool. Rust rewrite of [rime-wanxiang
 - 💾 **Cache reuse**: Skip re-downloading unchanged files
 - 🔌 **Proxy**: SOCKS5 / HTTP support
 - ⚡ **Cross-platform**: Windows / macOS / Linux
+
+On Linux with Fcitx5, setup (`snout --init`) and full updates (`snout --update` or the TUI)
+automatically add Rime to the current input method group and save it, preserving existing
+input methods, their order and keyboard layouts. Repeated runs do not add duplicates or
+explicitly switch the active input method. Use your Fcitx5 shortcut to switch to Rime.
+Install `fcitx5-rime` and start Fcitx5 in your desktop session first; setup reports missing
+prerequisites with retry instructions. It does not install packages or configure the desktop
+input framework or autostart.
 
 ## Install
 

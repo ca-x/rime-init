@@ -5,8 +5,11 @@ use crate::updater;
 use anyhow::Result;
 
 /// 首次初始化向导
-pub async fn run_init_wizard() -> Result<()> {
-    let manager = Manager::new()?;
+pub async fn run_init_wizard(language: Option<&str>) -> Result<()> {
+    let mut manager = Manager::new()?;
+    if let Some(language) = language {
+        manager.config.language = language.into();
+    }
     let lang = Lang::from_str(&manager.config.language);
     let t = L10n::new(lang);
 
@@ -51,7 +54,6 @@ pub async fn run_init_wizard() -> Result<()> {
     }
 
     // 4. 保存配置
-    let mut manager = Manager::new()?;
     manager.config.model_patch_enabled = model_patch;
     manager.save()?;
 
